@@ -1,7 +1,10 @@
-
 import cv2
 import time
+import json
+import os
 import numpy as np
+import base64
+
 from flask import Flask, render_template, Response, request, jsonify
 from ultralytics import YOLO
 from deepface import DeepFace
@@ -11,13 +14,38 @@ app = Flask(__name__)
 
 model = YOLO("yolov8n.pt")
 
-known_faces = []  # [{'embedding': [...], 'tag': '이진수'}]
-pending_faces = {}  # {face_id: {'embedding': [...], 'start_time': float}}
-active_tags = {}  # {temp_id: tag}
+known_faces = []       # [{'embedding': np.array([...]), 'tag': '이진수'}]
+pending_faces = {}     # {face_id: {'embedding': [...], 'start_time': float}}
+active_tags = {}       # {temp_id: (tag, last_seen_time)}
 
 SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
-TAG_CACHE_SECONDS = 5  # 얼마나 태그를 유지할지 (초)
+TAG_CACHE_SECONDS = 5
+SAVE_FILE = "known_faces.json"
+
+# ------------------------ 태그 저장 / 불러오기 ------------------------
+
+def load_known_faces():
+    global known_faces
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                known_faces = [{'embedding': np.array(face['embedding']), 'tag': face['tag']} for face in data]
+            print(f"[✔] {len(known_faces)}개의 태그 데이터를 로드했습니다.")
+        except Exception as e:
+            print(f"[!] 태그 불러오기 실패: {e}")
+
+def save_known_faces():
+    try:
+        data = [{'embedding': face['embedding'].tolist(), 'tag': face['tag']} for face in known_faces]
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print("[💾] 태그 데이터 저장 완료.")
+    except Exception as e:
+        print(f"[!] 태그 저장 실패: {e}")
+
+# ------------------------ 임베딩 및 매칭 ------------------------
 
 def get_face_embedding(face_img):
     try:
@@ -33,6 +61,8 @@ def find_matching_tag(embedding):
         if similarity > SIMILARITY_THRESHOLD:
             return face['tag']
     return None
+
+# ------------------------ 영상 스트리밍 ------------------------
 
 def generate_frames():
     cap = cv2.VideoCapture(0)
@@ -62,57 +92,59 @@ def generate_frames():
             if embedding is None:
                 continue
 
-            # hash로 임시 ID 만들기 (active_tags 캐시에 사용)
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
 
-            # 캐시된 태그 있으면 바로 사용 (유지 시간 초과 시 삭제)
+            # 캐시된 태그 있으면 표시
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
-                    # 최신 태그 표시
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(frame, tag, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.9, (255, 255, 0), 2)
-                    # 마지막 본 시간 업데이트
                     active_tags[temp_id] = (tag, current_time)
                     continue
                 else:
                     del active_tags[temp_id]
 
-            # known_faces에서 새로 태그 찾기
+            # 새로운 매칭 여부 확인
             tag = find_matching_tag(embedding)
             if tag:
-                # 캐시에 등록하고 표시
                 active_tags[temp_id] = (tag, current_time)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.putText(frame, tag, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
                             0.9, (255, 255, 0), 2)
                 continue
 
-            # pending_faces 중복 방지
-            duplicate_pending = False
-            for pf in pending_faces.values():
-                similarity = 1 - cosine(embedding, pf['embedding'])
-                if similarity > SIMILARITY_THRESHOLD:
-                    duplicate_pending = True
-                    break
-            if duplicate_pending:
+            # 중복 pending 등록 방지
+            if any(1 - cosine(embedding, pf['embedding']) > SIMILARITY_THRESHOLD for pf in pending_faces.values()):
                 continue
 
-            # 새로운 사람 등록
+            # 등록되지 않은 경우 대기 추가
             if temp_id not in pending_faces:
-                pending_faces[temp_id] = {'embedding': embedding, 'start_time': current_time}
+                face_img = face_region.copy()
+                success, face_jpg = cv2.imencode('.jpg', face_img)
+
+                if success:
+                    face_b64 = base64.b64encode(face_jpg).decode('utf-8')
+                    print(f"[📷] 미리보기 저장됨 - ID: {temp_id}, 길이: {len(face_b64)}")
             else:
-                duration = current_time - pending_faces[temp_id]['start_time']
-                if duration >= REQUIRED_SECONDS:
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 100, 255), 2)
-                    cv2.putText(frame, f"태그 대기중...", (x1, y2 + 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
+                face_b64 = ''
+                print(f"[!] 이미지 인코딩 실패 - ID: {temp_id}")
+
+            pending_faces[temp_id] = {
+                'embedding': embedding,
+                'start_time': current_time,
+                'image': face_b64
+            }
+
 
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+
+# ------------------------ Flask 라우터 ------------------------
 
 @app.route('/')
 def index():
@@ -125,7 +157,15 @@ def video_feed():
 
 @app.route('/get_pending_tags')
 def get_pending_tags():
-    return jsonify(list(pending_faces.keys()))
+    data = [
+        {
+            'face_id': face_id,
+            'image': info.get('image', '')
+        }
+        for face_id, info in pending_faces.items()
+    ]
+    return jsonify(data)
+
 
 @app.route('/submit_tag', methods=['POST'])
 def submit_tag():
@@ -138,8 +178,14 @@ def submit_tag():
             'tag': tag
         })
         del pending_faces[face_id]
+        save_known_faces()
         return 'success'
     return 'fail'
 
+
+
+# ------------------------ 서버 실행 ------------------------
+
 if __name__ == '__main__':
+    load_known_faces()
     app.run(host='0.0.0.0', port=5000)
