@@ -14,8 +14,8 @@ app = Flask(__name__)
 
 model = YOLO("yolov8n.pt")
 
-known_faces = []       # [{'embedding': np.array([...]), 'tag': '이진수'}]
-pending_faces = {}     # {face_id: {'embedding': [...], 'start_time': float}}
+known_faces = []       # [{'embedding': np.array([...]), 'tag': '이름', 'category': '분류'}]
+pending_faces = {}     # {face_id: {'embedding': [...], 'start_time': float, 'image': base64}}
 active_tags = {}       # {temp_id: (tag, last_seen_time)}
 
 SIMILARITY_THRESHOLD = 0.7
@@ -31,14 +31,28 @@ def load_known_faces():
         try:
             with open(SAVE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                known_faces = [{'embedding': np.array(face['embedding']), 'tag': face['tag']} for face in data]
+                known_faces = [
+                    {
+                        'embedding': np.array(face['embedding']),
+                        'tag': face['tag'],
+                        'category': face.get('category', '기타')
+                    }
+                    for face in data
+                ]
             print(f"[✔] {len(known_faces)}개의 태그 데이터를 로드했습니다.")
         except Exception as e:
             print(f"[!] 태그 불러오기 실패: {e}")
 
 def save_known_faces():
     try:
-        data = [{'embedding': face['embedding'].tolist(), 'tag': face['tag']} for face in known_faces]
+        data = [
+            {
+                'embedding': face['embedding'].tolist(),
+                'tag': face['tag'],
+                'category': face.get('category', '기타')
+            }
+            for face in known_faces
+        ]
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print("[💾] 태그 데이터 저장 완료.")
@@ -59,8 +73,8 @@ def find_matching_tag(embedding):
     for face in known_faces:
         similarity = 1 - cosine(embedding, face['embedding'])
         if similarity > SIMILARITY_THRESHOLD:
-            return face['tag']
-    return None
+            return face['tag'], face.get('category', '기타')
+    return None, None
 
 # ------------------------ 영상 스트리밍 ------------------------
 
@@ -94,55 +108,50 @@ def generate_frames():
 
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
 
-            # 캐시된 태그 있으면 표시
+            # 캐시된 태그가 있으면 사용
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
+                    category = next((f['category'] for f in known_faces if f['tag'] == tag), '기타')
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(frame, tag, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                    cv2.putText(frame, f"{category}:{tag}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.9, (255, 255, 0), 2)
                     active_tags[temp_id] = (tag, current_time)
                     continue
                 else:
                     del active_tags[temp_id]
 
-            # 새로운 매칭 여부 확인
-            tag = find_matching_tag(embedding)
+            # 새로운 매칭 시도
+            tag, category = find_matching_tag(embedding)
             if tag:
                 active_tags[temp_id] = (tag, current_time)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, tag, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                cv2.putText(frame, f"{category}:{tag}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
                             0.9, (255, 255, 0), 2)
                 continue
 
-            # 중복 pending 등록 방지
+            # 중복 pending 방지
             if any(1 - cosine(embedding, pf['embedding']) > SIMILARITY_THRESHOLD for pf in pending_faces.values()):
                 continue
 
-            # 등록되지 않은 경우 대기 추가
+            # 대기 등록 및 미리보기 생성
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
-
                 if success:
                     face_b64 = base64.b64encode(face_jpg).decode('utf-8')
-                    print(f"[📷] 미리보기 저장됨 - ID: {temp_id}, 길이: {len(face_b64)}")
-            else:
-                face_b64 = ''
-                print(f"[!] 이미지 인코딩 실패 - ID: {temp_id}")
-
-            pending_faces[temp_id] = {
-                'embedding': embedding,
-                'start_time': current_time,
-                'image': face_b64
-            }
-
+                else:
+                    face_b64 = ''
+                pending_faces[temp_id] = {
+                    'embedding': embedding,
+                    'start_time': current_time,
+                    'image': face_b64
+                }
 
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
 
 # ------------------------ Flask 라우터 ------------------------
 
@@ -166,23 +175,23 @@ def get_pending_tags():
     ]
     return jsonify(data)
 
-
 @app.route('/submit_tag', methods=['POST'])
 def submit_tag():
     data = request.get_json()
     face_id = data['face_id']
     tag = data['tag']
+    category = data.get('category', '기타')
+
     if face_id in pending_faces:
         known_faces.append({
             'embedding': pending_faces[face_id]['embedding'],
-            'tag': tag
+            'tag': tag,
+            'category': category
         })
         del pending_faces[face_id]
         save_known_faces()
         return 'success'
     return 'fail'
-
-
 
 # ------------------------ 서버 실행 ------------------------
 
