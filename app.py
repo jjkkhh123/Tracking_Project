@@ -9,6 +9,7 @@ from flask import Flask, render_template, Response, request, jsonify
 from ultralytics import YOLO
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
+from PIL import ImageFont, ImageDraw, Image
 
 app = Flask(__name__)
 
@@ -47,7 +48,7 @@ def save_known_faces():
     try:
         data = [
             {
-                'embedding': face['embedding'].tolist(),
+                'embedding': face['embedding'].tolist() if isinstance(face['embedding'], np.ndarray) else face['embedding'],
                 'tag': face['tag'],
                 'category': face.get('category', '기타')
             }
@@ -58,6 +59,7 @@ def save_known_faces():
         print("[💾] 태그 데이터 저장 완료.")
     except Exception as e:
         print(f"[!] 태그 저장 실패: {e}")
+
 
 # ------------------------ 임베딩 및 매칭 ------------------------
 
@@ -114,8 +116,7 @@ def generate_frames():
                 if current_time - last_seen < TAG_CACHE_SECONDS:
                     category = next((f['category'] for f in known_faces if f['tag'] == tag), '기타')
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(frame, f"{category}:{tag}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.9, (255, 255, 0), 2)
+                    frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                     active_tags[temp_id] = (tag, current_time)
                     continue
                 else:
@@ -126,8 +127,7 @@ def generate_frames():
             if tag:
                 active_tags[temp_id] = (tag, current_time)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"{category}:{tag}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.9, (255, 255, 0), 2)
+                frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
 
             # 중복 pending 방지
@@ -152,6 +152,20 @@ def generate_frames():
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+
+
+def draw_korean_text(frame, text, x, y, font_size=30):
+    img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    font_path = os.path.join("static", "fonts", "malgun.ttf")
+    font = ImageFont.truetype(font_path, font_size)
+
+    draw.text((x, y), text, font=font, fill=(255, 255, 0))  # 노란색
+    return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+
 
 # ------------------------ Flask 라우터 ------------------------
 

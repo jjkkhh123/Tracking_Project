@@ -1,6 +1,18 @@
-async function fetchPending() {
+let previousPending = [];
+
+async function fetchPending(forceUpdate = false) {
     const res = await fetch('/get_pending_tags');
     const pendingList = await res.json();
+
+    // 등록된 얼굴 ID만 비교
+    const pendingIds = pendingList.map(p => p.face_id);
+    const prevIds = previousPending.map(p => p.face_id);
+
+    const isDifferent = forceUpdate || pendingIds.join() !== prevIds.join();
+
+    if (!isDifferent) return;  // 변동 없으면 리렌더링 안 함
+
+    previousPending = pendingList;
 
     const previousInputs = {};
     document.querySelectorAll("form").forEach(form => {
@@ -47,9 +59,12 @@ async function submitTag(event, face_id) {
         body: JSON.stringify({ face_id, tag, category })
     });
 
-    fetchPending(); // 갱신
+    // 강제로 갱신
+    fetchPending(true);
 }
 
-// 최초 실행 및 반복 호출
-setInterval(fetchPending, 3000);
-fetchPending();
+// 주기적으로 변경 확인만
+setInterval(() => fetchPending(false), 3000);
+
+// 최초 실행
+fetchPending(true);
