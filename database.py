@@ -22,18 +22,22 @@ def get_db_connection():
 def load_known_faces():
     global known_faces
     known_faces = []
+
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute("SELECT tag, category, embedding FROM known_faces")
-        rows = cur.fetchall()
-        for row in rows:
-            known_faces.append({
-                'tag': row['tag'],
-                'category': row['category'],
-                'embedding': np.array(json.loads(row['embedding']))
-            })
+    cur = conn.cursor(dictionary=True)  # ✅ 수정된 부분
+    cur.execute("SELECT tag, category, embedding FROM known_faces")
+    rows = cur.fetchall()
+
+    for row in rows:
+        known_faces.append({
+            'tag': row['tag'],
+            'category': row['category'],
+            'embedding': np.array(json.loads(row['embedding']))
+        })
+
     conn.close()
     print(f"[DB] {len(known_faces)}개의 태그를 불러왔습니다.")
+
 
 # 얼굴 데이터 저장
 
