@@ -14,3 +14,9 @@ pip install ultralytics[track]
 ```
 pip install tf-keras
 ```
+
+sql 연동을 위해 설치
+```
+pip install pymysql
+pip install mysql-connector-python
+```
