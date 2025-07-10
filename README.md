@@ -45,7 +45,7 @@ pip install mysql-connector-python
 
 ## 📂 프로젝트 구조
 ```
-📁 your-project/
+📁 TrackingProject/
 ├── main.py # 실시간 처리 및 라우팅
 ├── login.py # 로그인/회원가입 기능
 ├── database.py # DB 연결 및 태그 저장/불러오기
