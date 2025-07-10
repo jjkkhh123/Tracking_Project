@@ -92,14 +92,13 @@ pip install mysql-connector-python
 # 필요한 라이브러리 설치
 pip install -r requirements.txt
 
-
-# YOLOv8n 모델 다운로드 (이미 포함된 경우 생략)
-# ultralytics 패키지에서 직접 다운로드
+```
 
 # 서버 실행
+```
 python main.py
+```
+📸 스크린샷
 
-📸 데모 스크린샷
-원하시면 추후 데모 이미지/영상도 추가할 수 있어요.
 
 
