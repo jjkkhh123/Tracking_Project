@@ -37,3 +37,27 @@ def logout():
     session.pop('user_id', None)
     session.pop('username', None)
     return redirect(url_for('login_bp.login'))
+
+@login_bp.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        confirm = request.form['confirm_password']
+
+        if password != confirm:
+            return render_template('register.html', error="비밀번호가 일치하지 않습니다.")
+
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+            if cur.fetchone():
+                return render_template('register.html', error="이미 존재하는 아이디입니다.")
+            
+            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+        conn.commit()
+        conn.close()
+
+        return redirect(url_for('login_bp.login'))
+
+    return render_template('register.html')

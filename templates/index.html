@@ -7,8 +7,13 @@
 </head>
 <body>
     <h1>실시간 얼굴 태깅 시스템</h1>
+
     <img src="/video_feed" alt="실시간 영상" />
     <canvas id="snapshot" style="display: none;"></canvas>
+    <br>
+    <form action="/logout" method="get" class="logout-form">
+    <button type="submit">로그아웃</button>
+    </form>
 
     <h2>태그 대기중인 얼굴들</h2>
     <div id="pending"></div>
