@@ -10,6 +10,10 @@ pip install pymysql
 pip install mysql-connector-python
 ```
 
+```
+pip uninstall deepface
+pip install insightface
+```
 
 # 실시간 얼굴 태깅 시스템
 
