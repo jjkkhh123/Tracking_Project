@@ -101,6 +101,9 @@
         <div class="modal-content">
             <span class="close" onclick="closeRegisterModal()">&times;</span>
             <h2>회원가입</h2>
+            {% if register_error %}
+                <div class="error">{{ register_error }}</div>
+            {% endif %}
             <form method="POST" action="/register" id="registerForm">
                 <input type="text" name="username" placeholder="아이디" required><br><br>
                 <input type="password" name="password" placeholder="비밀번호" required><br><br>
@@ -111,5 +114,10 @@
     </div>
 
     <script src="{{ url_for('static', filename='register_modal.js') }}"></script>
+    {% if open_modal %}
+    <script>
+        openRegisterModal();
+    </script>
+    {% endif %}
 </body>
 </html>

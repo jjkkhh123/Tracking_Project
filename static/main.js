@@ -17,11 +17,15 @@ async function fetchPending(forceUpdate = false) {
     const previousInputs = {};
     document.querySelectorAll("form").forEach(form => {
         const faceId = form.getAttribute("data-id");
+        const tagInput = form.querySelector("input[name='tag']");
+        const categorySelect = form.querySelector("select[name='category']");
+
         previousInputs[faceId] = {
-            tag: form.querySelector("input[name='tag']").value,
-            category: form.querySelector("select[name='category']").value
+            tag: tagInput?.value || '',
+            category: categorySelect?.value || '기타'
         };
     });
+
 
     let html = '';
     for (let { face_id, image } of pendingList) {

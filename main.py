@@ -1,4 +1,3 @@
-# main.py
 from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
 from functools import wraps
 import cv2
@@ -10,8 +9,6 @@ from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
 from login import login_bp
-
-
 from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
 
 app = Flask(__name__)
@@ -21,17 +18,20 @@ app.register_blueprint(login_bp)
 
 pending_faces = {}
 active_tags = {}
+
 SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
+
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('login_bp.login'))  # ✅ Blueprint 경로로 수정
+            return redirect(url_for('login_bp.login'))
         return f(*args, **kwargs)
     return decorated_function
+
 
 def get_face_embedding(face_img):
     try:
@@ -40,12 +40,14 @@ def get_face_embedding(face_img):
     except:
         return None
 
+
 def find_matching_tag(embedding):
     for face in known_faces:
         similarity = 1 - cosine(embedding, face['embedding'])
         if similarity > SIMILARITY_THRESHOLD:
             return face['tag'], face.get('category', '기타')
     return None, None
+
 
 def draw_korean_text(frame, text, x, y, font_size=30):
     img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -55,6 +57,7 @@ def draw_korean_text(frame, text, x, y, font_size=30):
     draw.text((x, y), text, font=font, fill=(255, 255, 0))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
+
 def generate_frames():
     cap = cv2.VideoCapture(0)
     while True:
@@ -62,8 +65,10 @@ def generate_frames():
         if not success:
             break
         current_time = time.time()
+
         results = model(frame, classes=[0])
         boxes = results[0].boxes
+
         for box in boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
@@ -71,12 +76,16 @@ def generate_frames():
             cx1, cy1 = int(w * 0.2), int(h * 0.1)
             cx2, cy2 = int(w * 0.8), int(h * 0.6)
             face_region = person_crop[cy1:cy2, cx1:cx2]
+
             if face_region.size == 0:
                 continue
+
             embedding = get_face_embedding(face_region)
             if embedding is None:
                 continue
+
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
+
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
@@ -87,23 +96,38 @@ def generate_frames():
                     continue
                 else:
                     del active_tags[temp_id]
+
             tag, category = find_matching_tag(embedding)
             if tag:
                 active_tags[temp_id] = (tag, current_time)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
-            if any(1 - cosine(embedding, pf['embedding']) > SIMILARITY_THRESHOLD for pf in pending_faces.values()):
+
+            is_pending_match = any(
+                1 - cosine(embedding, pf['embedding']) > 0.85
+                for pf in pending_faces.values()
+            )
+            if is_pending_match:
+                print(f"[⏩] 유사 얼굴 대기 중: {temp_id}")
                 continue
+
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
-                face_b64 = base64.b64encode(face_jpg).decode('utf-8') if success else ''
+
+                if not success:
+                    print(f"[⚠] 이미지 인코딩 실패 → 등록 생략: {temp_id}")
+                    continue
+
+                face_b64 = base64.b64encode(face_jpg).decode('utf-8')
                 pending_faces[temp_id] = {
                     'embedding': embedding,
                     'start_time': current_time,
                     'image': face_b64
                 }
+                print(f"[🆕] 등록 대기 추가: {temp_id}")
+
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
@@ -115,15 +139,18 @@ def logout():
     session.pop('user_id', None)
     return redirect(url_for('login'))
 
+
 @app.route('/')
 @login_required
 def index():
     return render_template('index.html')
 
+
 @app.route('/video_feed')
 @login_required
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 @app.route('/get_pending_tags')
 @login_required
@@ -137,6 +164,7 @@ def get_pending_tags():
     ]
     return jsonify(data)
 
+
 @app.route('/submit_tag', methods=['POST'])
 @login_required
 def submit_tag():
@@ -144,6 +172,7 @@ def submit_tag():
     face_id = data['face_id']
     tag = data['tag']
     category = data.get('category', '기타')
+
     if face_id in pending_faces:
         embedding = np.array(pending_faces[face_id]['embedding'])
         save_face_to_db(tag, category, embedding, user_id=1)
@@ -155,6 +184,7 @@ def submit_tag():
         del pending_faces[face_id]
         return 'success'
     return 'fail'
+
 
 if __name__ == '__main__':
     load_known_faces()
