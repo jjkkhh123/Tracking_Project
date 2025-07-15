@@ -1,16 +1,21 @@
+
 from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
 from functools import wraps
 import cv2
 import numpy as np
 import base64
 import time
+import pytesseract
+import pyttsx3
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
+
 from login import login_bp
 from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
 
+# Flask 앱 초기화
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
 model = YOLO("yolov8n.pt")
@@ -18,11 +23,19 @@ app.register_blueprint(login_bp)
 
 pending_faces = {}
 active_tags = {}
-
 SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
 
+# OCR + TTS 초기화
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+tts_engine = pyttsx3.init()
+tts_engine.setProperty('rate', 150)
+tts_engine.setProperty('volume', 1.0)
+
+latest_frame = None  # ✅ 최신 프레임 저장용
+
+# ------------------ 인증 ------------------
 
 def login_required(f):
     @wraps(f)
@@ -32,6 +45,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# ------------------ 기능 함수 ------------------
 
 def get_face_embedding(face_img):
     try:
@@ -40,14 +54,12 @@ def get_face_embedding(face_img):
     except:
         return None
 
-
 def find_matching_tag(embedding):
     for face in known_faces:
         similarity = 1 - cosine(embedding, face['embedding'])
         if similarity > SIMILARITY_THRESHOLD:
             return face['tag'], face.get('category', '기타')
     return None, None
-
 
 def draw_korean_text(frame, text, x, y, font_size=30):
     img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -57,14 +69,22 @@ def draw_korean_text(frame, text, x, y, font_size=30):
     draw.text((x, y), text, font=font, fill=(255, 255, 0))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
+def extract_text_from_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    text = pytesseract.image_to_string(gray, lang='kor+eng')
+    return text.strip()
+
+# ------------------ 스트리밍 ------------------
 
 def generate_frames():
+    global latest_frame
     cap = cv2.VideoCapture(0)
     while True:
         success, frame = cap.read()
         if not success:
             break
         current_time = time.time()
+        latest_frame = frame.copy()
 
         results = model(frame, classes=[0])
         boxes = results[0].boxes
@@ -104,53 +124,35 @@ def generate_frames():
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
 
-            is_pending_match = any(
-                1 - cosine(embedding, pf['embedding']) > 0.85
-                for pf in pending_faces.values()
-            )
-            if is_pending_match:
-                print(f"[⏩] 유사 얼굴 대기 중: {temp_id}")
+            is_duplicate = any(1 - cosine(embedding, pf['embedding']) > 0.85 for pf in pending_faces.values())
+            if is_duplicate:
                 continue
 
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
-
-                if not success:
-                    print(f"[⚠] 이미지 인코딩 실패 → 등록 생략: {temp_id}")
-                    continue
-
-                face_b64 = base64.b64encode(face_jpg).decode('utf-8')
+                face_b64 = base64.b64encode(face_jpg).decode('utf-8') if success else ''
                 pending_faces[temp_id] = {
                     'embedding': embedding,
                     'start_time': current_time,
                     'image': face_b64
                 }
-                print(f"[🆕] 등록 대기 추가: {temp_id}")
 
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    return redirect(url_for('login'))
-
+# ------------------ 라우터 ------------------
 
 @app.route('/')
 @login_required
 def index():
     return render_template('index.html')
 
-
 @app.route('/video_feed')
 @login_required
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
 
 @app.route('/get_pending_tags')
 @login_required
@@ -163,7 +165,6 @@ def get_pending_tags():
         for face_id, info in pending_faces.items()
     ]
     return jsonify(data)
-
 
 @app.route('/submit_tag', methods=['POST'])
 @login_required
@@ -185,6 +186,36 @@ def submit_tag():
         return 'success'
     return 'fail'
 
+@app.route('/ocr_capture', methods=['POST'])
+@login_required
+def ocr_capture():
+    global latest_frame
+    if latest_frame is None:
+        return jsonify({'success': False, 'message': '프레임이 아직 준비되지 않았습니다.'}), 500
+    try:
+        frame = latest_frame.copy()
+        text = extract_text_from_image(frame)
+        return jsonify({'success': True, 'text': text})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/speak_text', methods=['POST'])
+@login_required
+def speak_text_route():
+    data = request.get_json()
+    text = data.get('text', '')
+    if text:
+        print(f"[🔊 읽기] {text}")
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+    return jsonify({'success': True})
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login_bp.login'))
 
 if __name__ == '__main__':
     load_known_faces()

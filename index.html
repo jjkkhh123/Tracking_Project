@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Face Tag Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>실시간 얼굴 태깅 시스템</h1>
+
+    <img src="/video_feed" alt="실시간 영상" />
+    <canvas id="snapshot" style="display: none;"></canvas>
+    <br>
+    <form action="/logout" method="get" class="logout-form">
+    <button type="submit">로그아웃</button>
+    
+
+    </form>
+    <button id="ocrBtn">글자 추출</button>
+
+    <h2>태그 대기중인 얼굴들</h2>
+    <div id="pending"></div>
+
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>
