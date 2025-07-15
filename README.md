@@ -14,7 +14,16 @@ pip install mysql-connector-python
 pip uninstall deepface
 pip install insightface
 ```
-
+OCR기능을 위해 다운로드
+아래의 링크에서 최신버전 다운로드
+```
+https://github.com/UB-Mannheim/tesseract/wiki
+```
+또는 아래의 링크로 바로 다운로
+```
+https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe
+```
+설치 중 Additional language data에서 Korean(kor), English(eng) 체크하기
 # 실시간 얼굴 태깅 시스템
 
 실시간 웹캠 영상을 기반으로 사람을 인식하고 얼굴 임베딩을 통해 기존에 등록된 태그와 유사도를 비교하여 자동 분류하거나, 미등록된 경우 사용자로부터 태그를 입력받아 저장하는 시스템입니다.
