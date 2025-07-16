@@ -7,20 +7,15 @@
 </head>
 <body>
     <h1>실시간 얼굴 태깅 시스템</h1>
-
-    <img src="/video_feed" alt="실시간 영상" />
-    <canvas id="snapshot" style="display: none;"></canvas>
-    <br>
-    <form action="/logout" method="get" class="logout-form">
-    <button type="submit">로그아웃</button>
-    
-
-    </form>
-    <button id="ocrBtn">글자 추출</button>
-
-    <h2>태그 대기중인 얼굴들</h2>
-    <div id="pending"></div>
-
+    <div style="text-align:center;">
+        <img src="/video_feed" width="640" style="border-radius: 10px; border: 2px solid #6c7ae0;" />
+    </div>
+    <div style="text-align: center; margin-top: 10px;">
+        <a href="/logout" class="logout-btn">로그아웃</a>
+        <button id="ocrBtn" class="ocr-btn">글자 추출</button>
+    </div>
+    <h2 style="text-align:center;">태그 대기중인 얼굴들</h2>
+    <div id="pending" class="pending-container"></div>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

@@ -1,21 +1,16 @@
-
 from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
 from functools import wraps
 import cv2
 import numpy as np
 import base64
 import time
-import pytesseract
-import pyttsx3
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
-
 from login import login_bp
 from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
 
-# Flask 앱 초기화
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
 model = YOLO("yolov8n.pt")
@@ -23,19 +18,11 @@ app.register_blueprint(login_bp)
 
 pending_faces = {}
 active_tags = {}
+last_frame = None  # 🔁 최신 프레임 저장용
+
 SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
-
-# OCR + TTS 초기화
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-tts_engine = pyttsx3.init()
-tts_engine.setProperty('rate', 150)
-tts_engine.setProperty('volume', 1.0)
-
-latest_frame = None  # ✅ 최신 프레임 저장용
-
-# ------------------ 인증 ------------------
 
 def login_required(f):
     @wraps(f)
@@ -44,8 +31,6 @@ def login_required(f):
             return redirect(url_for('login_bp.login'))
         return f(*args, **kwargs)
     return decorated_function
-
-# ------------------ 기능 함수 ------------------
 
 def get_face_embedding(face_img):
     try:
@@ -69,23 +54,16 @@ def draw_korean_text(frame, text, x, y, font_size=30):
     draw.text((x, y), text, font=font, fill=(255, 255, 0))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
-def extract_text_from_image(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    text = pytesseract.image_to_string(gray, lang='kor+eng')
-    return text.strip()
-
-# ------------------ 스트리밍 ------------------
-
 def generate_frames():
-    global latest_frame
+    global last_frame
     cap = cv2.VideoCapture(0)
     while True:
         success, frame = cap.read()
         if not success:
             break
-        current_time = time.time()
-        latest_frame = frame.copy()
 
+        last_frame = frame.copy()
+        current_time = time.time()
         results = model(frame, classes=[0])
         boxes = results[0].boxes
 
@@ -93,6 +71,7 @@ def generate_frames():
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
             person_crop = frame[y1:y2, x1:x2]
+
             cx1, cy1 = int(w * 0.2), int(h * 0.1)
             cx2, cy2 = int(w * 0.8), int(h * 0.6)
             face_region = person_crop[cy1:cy2, cx1:cx2]
@@ -106,6 +85,7 @@ def generate_frames():
 
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
 
+            # 1. 캐시에 있다면 태그 표시
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
@@ -117,6 +97,7 @@ def generate_frames():
                 else:
                     del active_tags[temp_id]
 
+            # 2. DB에서 찾기
             tag, category = find_matching_tag(embedding)
             if tag:
                 active_tags[temp_id] = (tag, current_time)
@@ -124,10 +105,15 @@ def generate_frames():
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
 
-            is_duplicate = any(1 - cosine(embedding, pf['embedding']) > 0.85 for pf in pending_faces.values())
+            # 3. 대기 목록에서 중복 체크
+            is_duplicate = any(
+                1 - cosine(embedding, pf['embedding']) > 0.85
+                for pf in pending_faces.values()
+            )
             if is_duplicate:
                 continue
 
+            # 4. 신규 등록
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
@@ -140,9 +126,50 @@ def generate_frames():
 
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
-        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-# ------------------ 라우터 ------------------
+@app.route('/ocr_capture', methods=['POST'])
+@login_required
+def ocr_capture():
+    from OCR_Paddle_module import extract_text_from_image
+    global last_frame
+    if last_frame is None:
+        return jsonify({'success': False, 'message': '아직 프레임이 확보되지 않았습니다.'})
+    try:
+        text = extract_text_from_image(last_frame)
+        return jsonify({'success': True, 'text': text})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/speak_text', methods=['POST'])
+@login_required
+def speak_text():
+    from gtts import gTTS
+    import pygame
+    import io
+
+    data = request.get_json()
+    text = data.get('text', '')
+
+    try:
+        tts = gTTS(text=text, lang='ko')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+
+        pygame.mixer.init()
+        pygame.mixer.music.load(fp)
+        pygame.mixer.music.play()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login'))
 
 @app.route('/')
 @login_required
@@ -185,37 +212,6 @@ def submit_tag():
         del pending_faces[face_id]
         return 'success'
     return 'fail'
-
-@app.route('/ocr_capture', methods=['POST'])
-@login_required
-def ocr_capture():
-    global latest_frame
-    if latest_frame is None:
-        return jsonify({'success': False, 'message': '프레임이 아직 준비되지 않았습니다.'}), 500
-    try:
-        frame = latest_frame.copy()
-        text = extract_text_from_image(frame)
-        return jsonify({'success': True, 'text': text})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/speak_text', methods=['POST'])
-@login_required
-def speak_text_route():
-    data = request.get_json()
-    text = data.get('text', '')
-    if text:
-        print(f"[🔊 읽기] {text}")
-        tts_engine.say(text)
-        tts_engine.runAndWait()
-    return jsonify({'success': True})
-
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    return redirect(url_for('login_bp.login'))
 
 if __name__ == '__main__':
     load_known_faces()
