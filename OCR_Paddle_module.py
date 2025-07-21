@@ -1,26 +1,33 @@
-
 import cv2
 from paddleocr import PaddleOCR
 
-# OCR 초기화 (언어 설정은 상황에 맞게 조정)
 ocr = PaddleOCR(use_angle_cls=False, lang='korean')
 
 def extract_text_from_image(image):
     try:
-        # 원본 컬러 이미지 사용 권장 (회색/이진화는 오히려 성능 저하)
+        if image is None or image.size == 0:
+            return "[입력 이미지 오류]"
+
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         results = ocr.ocr(image)
 
-        if not results or len(results[0]) == 0:
-            return "[인식된 텍스트 없음]"
+        print("🔍 OCR raw 결과:", results)
 
         texts = []
-        for line in results[0]:
-            if isinstance(line, list) and len(line) >= 2:
-                text = line[1][0]
-                texts.append(text)
+
+        # ✅ DocVQA 스타일로 반환된 경우 (딕셔너리 포함)
+        if isinstance(results, list) and isinstance(results[0], dict) and 'rec_texts' in results[0]:
+            texts = results[0].get('rec_texts', [])
+
+        # ✅ 일반 OCR 스타일로 반환된 경우 (리스트 구조)
+        elif isinstance(results, list):
+            for line_group in results:
+                for line in line_group:
+                    if isinstance(line, list) and len(line) >= 2:
+                        text = line[1][0]
+                        texts.append(text)
 
         return '\n'.join(texts) if texts else "[인식된 텍스트 없음]"
 
