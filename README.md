@@ -113,5 +113,7 @@ python main.py
 ```
 📸 스크린샷
 
-
+# 참고 자료
+OCR 관련 자료
+https://github.com/SeonminKim1/Study-OCR 
 
