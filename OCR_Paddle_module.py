@@ -1,20 +1,29 @@
-from paddleocr import PaddleOCR
-import numpy as np
-import cv2
 
-# PaddleOCR 초기화 (한글 + 회전 보정)
-ocr = PaddleOCR(use_angle_cls=True, lang='korean')
+import cv2
+from paddleocr import PaddleOCR
+
+# OCR 초기화 (언어 설정은 상황에 맞게 조정)
+ocr = PaddleOCR(use_angle_cls=False, lang='korean')
 
 def extract_text_from_image(image):
-    if image is None or not isinstance(image, np.ndarray):
-        return "이미지 오류"
+    try:
+        # 원본 컬러 이미지 사용 권장 (회색/이진화는 오히려 성능 저하)
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
-    resized = cv2.resize(image, (0, 0), fx=2, fy=2)
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        results = ocr.ocr(image)
 
-    result = ocr.ocr(rgb)  # ❗ cls 제거
-    if not result or not result[0]:
-        return "텍스트를 인식하지 못했습니다."
+        if not results or len(results[0]) == 0:
+            return "[인식된 텍스트 없음]"
 
-    texts = [line[1][0] for line in result[0]]
-    return "\n".join(texts)
+        texts = []
+        for line in results[0]:
+            if isinstance(line, list) and len(line) >= 2:
+                text = line[1][0]
+                texts.append(text)
+
+        return '\n'.join(texts) if texts else "[인식된 텍스트 없음]"
+
+    except Exception as e:
+        print("[!] OCR 내부 오류:", e)
+        return f"[오류] {str(e)}"

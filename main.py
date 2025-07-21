@@ -13,7 +13,7 @@ from database import get_db_connection, load_known_faces, save_face_to_db, known
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
-model = YOLO("yolov8n.pt")
+model = YOLO("best.pt") #yolovn.pt가 기존
 app.register_blueprint(login_bp)
 
 pending_faces = {}
@@ -64,7 +64,7 @@ def generate_frames():
 
         last_frame = frame.copy()
         current_time = time.time()
-        results = model(frame, classes=[0])
+        results = model(frame, classes=[48]) #best.pt 에서의 사람은 48번째 index 기존은 0이 사람
         boxes = results[0].boxes
 
         for box in boxes:
@@ -106,12 +106,16 @@ def generate_frames():
                 continue
 
             # 3. 대기 목록에서 중복 체크
-            is_duplicate = any(
-                1 - cosine(embedding, pf['embedding']) > 0.85
-                for pf in pending_faces.values()
-            )
-            if is_duplicate:
+            already_pending = False
+            for pf in pending_faces.values():
+                similarity = 1 - cosine(embedding, pf['embedding'])
+                if similarity > SIMILARITY_THRESHOLD:
+                    already_pending = True
+                    break
+
+            if already_pending:
                 continue
+
 
             # 4. 신규 등록
             if temp_id not in pending_faces:
