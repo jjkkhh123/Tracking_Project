@@ -1,9 +1,13 @@
-from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
-from functools import wraps
 import cv2
 import numpy as np
 import base64
 import time
+import mediapipe as mp
+import sys
+import threading
+import socket
+from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
+from functools import wraps
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
@@ -11,33 +15,77 @@ from ultralytics import YOLO
 from login import login_bp
 from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
 
+# ✅ mediapipe 객체는 메모리 효율 및 동시성 문제를 줄이기 위해 매번 생성하도록 구조 변경 (→ 아래 함수 내부로 이동)
+
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
-model = YOLO("best.pt") #yolovn.pt가 기존
+model = YOLO("best.pt")  # 기존 yolov8n.pt → best.pt
 app.register_blueprint(login_bp)
 
 pending_faces = {}
 active_tags = {}
-last_frame = None  # 🔁 최신 프레임 저장용
+last_frame = None
 
 SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
 
+
+def align_face_with_mediapipe(image):
+    h, w = image.shape[:2]
+    try:
+        with mp.solutions.face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
+            results = face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    except Exception as e:
+        print("[❌] mediapipe 처리 실패:", e)
+        return image
+
+    if not results.multi_face_landmarks:
+        print("[!] 얼굴 미검출: mediapipe 결과 없음")
+        return image
+
+    try:
+        landmarks = results.multi_face_landmarks[0].landmark
+
+        # 눈 중심 계산
+        left_eye = np.mean([(landmarks[33].x, landmarks[33].y), (landmarks[133].x, landmarks[133].y)], axis=0)
+        right_eye = np.mean([(landmarks[362].x, landmarks[362].y), (landmarks[263].x, landmarks[263].y)], axis=0)
+
+        # 이미지 좌표로 변환
+        left_eye = np.array([left_eye[0] * w, left_eye[1] * h])
+        right_eye = np.array([right_eye[0] * w, right_eye[1] * h])
+
+        delta = right_eye - left_eye
+        angle = np.degrees(np.arctan2(delta[1], delta[0]))
+        center = tuple(int(x) for x in np.mean([left_eye, right_eye], axis=0))
+
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        aligned = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR)
+
+        return aligned
+    except Exception as e:
+        print("[❌] align_face_with_mediapipe 예외 발생:", e)
+        return image
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('login_bp.login'))
+            return redirect(url_for('login_bp.login'))  # ✅ 정확한 blueprint 명시
         return f(*args, **kwargs)
     return decorated_function
 
+
 def get_face_embedding(face_img):
     try:
-        embedding = DeepFace.represent(face_img, model_name='Facenet', enforce_detection=False)[0]['embedding']
+        aligned = align_face_with_mediapipe(face_img)
+        embedding = DeepFace.represent(aligned, model_name='Facenet', enforce_detection=False)[0]['embedding']
         return embedding
-    except:
+    except Exception as e:
+        print("[!] get_face_embedding 실패:", e)
         return None
+
 
 def find_matching_tag(embedding):
     for face in known_faces:
@@ -45,6 +93,7 @@ def find_matching_tag(embedding):
         if similarity > SIMILARITY_THRESHOLD:
             return face['tag'], face.get('category', '기타')
     return None, None
+
 
 def draw_korean_text(frame, text, x, y, font_size=30):
     img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -54,9 +103,11 @@ def draw_korean_text(frame, text, x, y, font_size=30):
     draw.text((x, y), text, font=font, fill=(255, 255, 0))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
+
 def generate_frames():
     global last_frame
     cap = cv2.VideoCapture(0)
+
     while True:
         success, frame = cap.read()
         if not success:
@@ -64,7 +115,7 @@ def generate_frames():
 
         last_frame = frame.copy()
         current_time = time.time()
-        results = model(frame, classes=[48]) #best.pt 에서의 사람은 48번째 index 기존은 0이 사람
+        results = model(frame, classes=[48])  # ✅ best.pt는 48이 사람 class
         boxes = results[0].boxes
 
         for box in boxes:
@@ -85,7 +136,7 @@ def generate_frames():
 
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
 
-            # 1. 캐시에 있다면 태그 표시
+            # 1. 캐시 확인
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
@@ -97,7 +148,7 @@ def generate_frames():
                 else:
                     del active_tags[temp_id]
 
-            # 2. DB에서 찾기
+            # 2. DB 검색
             tag, category = find_matching_tag(embedding)
             if tag:
                 active_tags[temp_id] = (tag, current_time)
@@ -105,19 +156,15 @@ def generate_frames():
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
 
-            # 3. 대기 목록에서 중복 체크
-            already_pending = False
-            for pf in pending_faces.values():
-                similarity = 1 - cosine(embedding, pf['embedding'])
-                if similarity > SIMILARITY_THRESHOLD:
-                    already_pending = True
-                    break
-
+            # 3. 중복 대기 확인
+            already_pending = any(
+                1 - cosine(embedding, pf['embedding']) > SIMILARITY_THRESHOLD
+                for pf in pending_faces.values()
+            )
             if already_pending:
                 continue
 
-
-            # 4. 신규 등록
+            # 4. 신규 대기 등록
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
@@ -133,6 +180,7 @@ def generate_frames():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
+
 @app.route('/ocr_capture', methods=['POST'])
 @login_required
 def ocr_capture():
@@ -145,6 +193,7 @@ def ocr_capture():
         return jsonify({'success': True, 'text': text})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
 
 @app.route('/speak_text', methods=['POST'])
 @login_required
@@ -170,32 +219,36 @@ def speak_text():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
-    return redirect(url_for('login'))
+    return redirect(url_for('login_bp.login'))  # ✅ blueprint명 반영
+
 
 @app.route('/')
 @login_required
 def index():
     return render_template('index.html')
 
+
 @app.route('/video_feed')
 @login_required
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
 @app.route('/get_pending_tags')
 @login_required
 def get_pending_tags():
-    data = [
+    return jsonify([
         {
             'face_id': face_id,
             'image': info.get('image', '')
         }
         for face_id, info in pending_faces.items()
-    ]
-    return jsonify(data)
+    ])
+
 
 @app.route('/submit_tag', methods=['POST'])
 @login_required
@@ -217,6 +270,19 @@ def submit_tag():
         return 'success'
     return 'fail'
 
+
+
 if __name__ == '__main__':
     load_known_faces()
+
+    # ✅ Flask 실행 직후 접속 URL을 출력 (조금 지연해서)
+    def show_access_url():
+        print("\n🌐 접속 주소:")
+        print(" - http://127.0.0.1:5000  (로컬)")
+        
+        ip = socket.gethostbyname(socket.gethostname())
+        print(f" - http://{ip}:5000    (외부접속)")
+
+    threading.Timer(2.0, show_access_url).start()  # 2초 후 실행
+
     app.run(host='0.0.0.0', port=5000)

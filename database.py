@@ -1,54 +1,71 @@
-# database.py
-import pymysql
-import json
-import numpy as np
 import mysql.connector
+import numpy as np
 
-# 얼굴 태그 데이터를 캐시해 둘 리스트
-known_faces = []
+# 전역 얼굴 정보 리스트
+known_faces = []  # [{'tag': str, 'category': str, 'embedding': np.ndarray}]
 
-# DB 연결 함수
+
 def get_db_connection():
-    return mysql.connector.connect(
-        host='localhost',
-        user='haihai',
-        password='0122',
-        database='tagpj'
-    )
+    """MySQL DB 연결"""
+    try:
+        return mysql.connector.connect(
+            host='localhost',
+            user='haihai',
+            password='0122',
+            database='tagpj'
+        )
+    except mysql.connector.Error as e:
+        print(f"[❌] DB 연결 오류: {e}")
+        raise
 
 
-
-# 얼굴 데이터 불러오기 (서버 시작 시 호출)
-def load_known_faces():
-    global known_faces
-    known_faces = []
-
+def save_face_to_db(tag, category, embedding, user_id):
+    """얼굴 태그와 임베딩 데이터를 DB에 저장"""
     conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)  # ✅ 수정된 부분
-    cur.execute("SELECT tag, category, embedding FROM known_faces")
-    rows = cur.fetchall()
+    try:
+        with conn.cursor() as cur:  # 💡 기존 cursor 닫기 생략 방지 위해 with문 사용
+            # 💡 임베딩 저장 시 float64 타입으로 고정 (재사용 시 일관성 보장)
+            embedding = np.asarray(embedding, dtype=np.float64)
+            embedding_str = ','.join(map(str, embedding))
+
+            cur.execute(
+                "INSERT INTO known_faces (tag, category, embedding, user_id) VALUES (%s, %s, %s, %s)",
+                (tag, category, embedding_str, user_id)
+            )
+        conn.commit()
+    except mysql.connector.Error as e:
+        print(f"[❌] DB 저장 오류: {e}")
+    finally:
+        conn.close()  # 💡 connection만 따로 close (cursor는 with문으로 처리됨)
+
+
+def load_known_faces():
+    """DB에서 임베딩 데이터를 불러와 known_faces 리스트에 로딩"""
+    global known_faces
+    conn = get_db_connection()
+    try:
+        with conn.cursor(dictionary=True) as cur:  # 💡 dictionary=True → 컬럼명으로 접근 가능
+            cur.execute("SELECT * FROM known_faces")
+            rows = cur.fetchall()
+    except mysql.connector.Error as e:
+        print(f"[❌] DB 조회 오류: {e}")
+        rows = []
+    finally:
+        conn.close()
+
+    known_faces.clear()
 
     for row in rows:
-        known_faces.append({
-            'tag': row['tag'],
-            'category': row['category'],
-            'embedding': np.array(json.loads(row['embedding']))
-        })
+        try:
+            # 💡 fromstring 사용 시 구분자 명시 & float64 보장 (split보다 안전하고 빠름)
+            embedding_array = np.fromstring(row['embedding'], sep=',', dtype=np.float64)
 
-    conn.close()
-    print(f"[DB] {len(known_faces)}개의 태그를 불러왔습니다.")
+            known_faces.append({
+                'tag': row['tag'],
+                'category': row['category'],
+                'embedding': embedding_array
+            })
+        except Exception as e:
+            print(f"[!] 임베딩 변환 실패 (tag: {row.get('tag')}): {e}")
 
-
-# 얼굴 데이터 저장
-
-def save_face_to_db(tag, category, embedding, user_id=1):
-    embedding_json = json.dumps(embedding.tolist())
-    conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO known_faces (user_id, tag, category, embedding) VALUES (%s, %s, %s, %s)",
-            (user_id, tag, category, embedding_json)
-        )
-    conn.commit()
-    conn.close()
-    print(f"[DB] 태그 '{tag}' 저장 완료.")
+    print(f"[DB] ✅ {len(known_faces)}개의 태그를 불러왔습니다.")
