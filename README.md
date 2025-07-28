@@ -1,117 +1,163 @@
-# Tracking_Project
-만약 ValueError: You have tensorflow 2.19.0 and this requires tf-keras package. Please run pip install tf-keras or downgrade your tensorflow. 와 같은 오류가 뜬다면 아래의 코드를 통해 해결
-```
-pip install tf-keras
-```
+# 👤 실시간 얼굴 태깅 시스템 (YOLOv8 + DeepFace)
 
-sql 연동을 위해 설치
-```
-pip install pymysql
-pip install mysql-connector-python
-```
-
-```
-pip uninstall deepface
-pip install insightface
-```
-OCR기능을 위해 다운로드
-아래의 링크에서 최신버전 다운로드
-```
-https://github.com/UB-Mannheim/tesseract/wiki
-```
-또는 아래의 링크로 바로 다운로
-```
-https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe
-```
-설치 중 Additional language data에서 Korean(kor), English(eng) 체크하기
-# 실시간 얼굴 태깅 시스템
-
-실시간 웹캠 영상을 기반으로 사람을 인식하고 얼굴 임베딩을 통해 기존에 등록된 태그와 유사도를 비교하여 자동 분류하거나, 미등록된 경우 사용자로부터 태그를 입력받아 저장하는 시스템입니다.
-
-## 📌 주요 기능
-
-- YOLOv8n 모델을 활용한 사람 탐지
-- DeepFace(Facenet) 기반 얼굴 임베딩 및 유사도 계산
-- 실시간 영상 스트리밍 (Flask + OpenCV)
-- 태깅이 필요한 얼굴에 대해 사용자 입력 폼 제공
-- 태그 등록 및 분류 기능
-- 로그인 및 회원가입 (세션 기반)
-- 반응형 웹 UI (PC 및 모바일 지원)
+Python Flask 기반의 웹 애플리케이션으로, 실시간 영상 속 인물을 YOLOv8로 탐지하고, DeepFace를 통해 얼굴 임베딩 후 기존 사용자와 비교하여 자동 분류하거나, 미등록된 인물에 대해 태그를 입력받아 저장하는 시스템입니다.
 
 ---
 
-## 🛠️ 사용 기술 및 모델
+## 📌 목차
 
-| 기능 | 사용 기술 / 라이브러리 / 모델 |
-|------|------------------------------|
-| 웹 서버 | Python Flask |
-| 실시간 영상 스트리밍 | OpenCV |
-| 사람 인식 | YOLOv8n (Ultralytics) |
-| 얼굴 임베딩 | DeepFace (`Facenet` 모델 사용) |
-| 벡터 유사도 측정 | Cosine Similarity (`scipy`) |
-| DB | MariaDB / MySQL (pymysql, mysql-connector-python) |
-| 웹 UI | HTML / CSS / JavaScript |
-| 사용자 인증 | 세션 기반 로그인 |
-| 한글 텍스트 렌더링 | PIL + Malgun.ttf 폰트 사용 |
+- [1. 주요 기능](#1-주요-기능)
+- [2. 사용 기술](#2-사용-기술)
+- [3. 프로젝트 구조](#3-프로젝트-구조)
+- [4. 시스템 처리 흐름](#4-시스템-처리-흐름)
+- [5. 실행 방법](#5-실행-방법)
+- [6. 데이터베이스 설정](#6-데이터베이스-설정)
+- [7. 테스트 계정](#7-테스트-계정)
+- [8. 시스템 구조도](#8-시스템-구조도)
+- [9. 라이선스](#10-라이선스)
 
 ---
 
-## 📂 프로젝트 구조
-```
+## 1. 주요 기능
+
+- ✅ YOLOv8 커스텀 모델을 이용한 사람 검출 (`best.pt`)
+- ✅ Mediapipe로 얼굴 정렬 → 정확도 향상
+- ✅ DeepFace (Facenet) 기반 얼굴 임베딩
+- ✅ Cosine Similarity로 기존 인물과 유사도 비교
+- ✅ 미인식 인물에 대해 태그 및 카테고리 수동 입력
+- ✅ 실시간 영상 스트리밍 (OpenCV + Flask)
+- ✅ PaddleOCR로 텍스트 추출 + gTTS 음성 출력
+- ✅ MariaDB/MySQL로 태그 및 사용자 정보 저장
+- ✅ PC 및 모바일 브라우저 대응 UI
+- ✅ 세션 기반 로그인 / 회원가입 시스템
+
+---
+
+## 2. 사용 기술
+
+| 기능               | 기술 스택 |
+|--------------------|------------|
+| 웹 프레임워크       | Flask |
+| 영상 처리           | OpenCV |
+| 객체 인식           | YOLOv8 (Ultralytics, `best.pt`) |
+| 얼굴 임베딩         | DeepFace (Facenet) + Mediapipe 정렬 |
+| OCR + 음성 출력     | PaddleOCR + gTTS |
+| DB 및 인증          | MySQL / MariaDB, 세션 기반 |
+| 클라이언트 UI       | HTML, CSS, JavaScript |
+| 폰트 렌더링         | PIL + Malgun.ttf |
+
+---
+
+## 3. 프로젝트 구조
+
+<pre><code>
 📁 TrackingProject/
-├── main.py # 실시간 처리 및 라우팅
-├── login.py # 로그인/회원가입 기능
-├── database.py # DB 연결 및 태그 저장/불러오기
-├── yolov8n.pt # YOLOv8n 모델 가중치
-├── static/
-│ ├── styles.css # CSS 스타일링
-│ ├── main.js # 태깅 대기 인터페이스 로직
-│ ├── register_modal.js # 회원가입 모달 제어
-│ └── fonts/
-│ └── malgun.ttf # 한글 폰트
+├── main.py                  # Flask 앱 실행 + 영상 처리
+├── login.py                 # 로그인, 회원가입 처리
+├── database.py              # DB 연결 및 임베딩 처리
+├── OCR_Paddle_module.py     # OCR 추출 함수
+├── yolov8n.pt               # 기본 YOLOv8n 모델 (백업용)
+├── best.pt                  # 커스텀 학습된 사람 탐지 모델
+├── requirements.txt         # Python 의존성
 ├── templates/
-│ ├── index.html # 메인 태깅 화면
-│ ├── login.html # 로그인 페이지 (+회원가입 모달)
-│ └── register.html # 독립 회원가입 페이지
-```
+│   ├── index.html           # 메인 태깅 화면
+│   └── register.html        # 회원가입 화면
+├── static/
+│   ├── styles.css           # 스타일
+│   ├── main.js              # 태깅 폼 처리 및 OCR 실행
+│   ├── register_modal.js    # 회원가입 모달 제어
+│   └── fonts/
+│       └── malgun.ttf       # 한글 폰트
+</code></pre>
 
 ---
 
-## ⚙️ 기술 흐름
-[카메라 입력]
-→ YOLOv8n으로 사람 탐지
-→ 얼굴 영역 crop
-→ DeepFace로 얼굴 임베딩
-→ 기존 태그와 cosine similarity 비교
-→ 일치: 태그 + 분류 표시
-→ 불일치: 사용자 입력 요청
+## 4. 시스템 처리 흐름
 
-
----
-
-## 🧠 기술 설명
-
-- **YOLOv8n**: 초경량 객체 탐지 모델로, `classes=[0]`을 지정해 사람만 탐지.
-- **DeepFace(Facenet)**: 얼굴 이미지를 고차원 임베딩 벡터로 변환해 개별 비교 없이 벡터 간 유사도로 얼굴 식별 가능.
-- **Cosine Similarity**: 기존 벡터들과의 코사인 유사도를 통해 같은 인물인지 판단 (`유사도 > 0.7`일 경우 일치 처리).
-- **세션 관리**: Flask의 `session`으로 로그인 유저 상태 유지.
-- **Pending Face 캐시**: 동일 얼굴 중복 요청 방지를 위해 일정 시간 동안 태깅 요청 캐시 처리.
+1. 카메라 영상 → YOLOv8로 사람 탐지  
+2. 얼굴 영역 crop → Mediapipe로 정렬  
+3. DeepFace(Facenet)으로 얼굴 임베딩 추출  
+4. 기존 사용자와 코사인 유사도 비교  
+   - 유사도 > 0.7 → 태그 자동 표시  
+   - 일치 없음 → 태그 입력 폼 생성  
+5. 입력된 태그 및 카테고리는 DB에 저장  
+6. 글자 추출 버튼 → OCR → TTS로 음성 출력 가능
 
 ---
 
-## 🧪 실행 방법
+## 5. 실행 방법
+
+### 1. git clone 및 가상환경 생성 후 실행에 필요한 파일들 다운로드
 
 ```bash
-# 필요한 라이브러리 설치
+git clone https://github.com/jjkkhh123/Tracking_Project
+conda create -n Trackingpj python = 3.9
 pip install -r requirements.txt
-
 ```
 
-# 서버 실행
-```
+### 2. YOLOv8 모델 준비
+- `best.pt` 파일을 프로젝트 루트에 위치시킵니다.
+- (이미 포함됨)
+
+### 3. 실행
+
+```bash
 python main.py
 ```
-📸 스크린샷
+
+실행 후 콘솔에 아래와 같은 접속 주소가 표시됩니다:
+
+```
+🌐 접속 주소:
+ - http://127.0.0.1:5000  (로컬)
+ - http://192.168.X.X:5000  (모바일 접근 가능)
+```
+
+---
+
+## 6. 데이터베이스 설정
+
+```sql
+CREATE DATABASE tagpj;
+USE tagpj;
+
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255),
+    password VARCHAR(255)
+);
+
+CREATE TABLE known_faces (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tag VARCHAR(255),
+    category VARCHAR(255),
+    embedding TEXT,
+    user_id INT
+);
+```
+
+---
+
+## 7. 테스트 계정
+
+| 아이디 | 비밀번호 |
+|--------|----------|
+| test1  | 1234     |
+
+> `users` 테이블에 직접 추가하거나 `/register` 통해 생성하세요.
+
+---
+
+## 8. 시스템 구조도
+![images](https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EC%8B%9C%EC%8A%A4%ED%85%9C%20%EC%95%84%ED%82%A4%ED%85%8D%EC%B2%98%20%EB%8B%A4%EC%9D%B4%EC%96%B4%EA%B7%B8%EB%9E%A8.jpg)
+
+
+---
+
+## 9. 라이선스
+
+MIT License
+
 
 # 참고 자료
 OCR 관련 자료
