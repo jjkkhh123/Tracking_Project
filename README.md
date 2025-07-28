@@ -164,8 +164,21 @@ MIT License
 OCR 관련 자료
 https://github.com/SeonminKim1/Study-OCR 
 ## 10. 구현 화면
-<img src="https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EB%A1%9C%EA%B7%B8%EC%9D%B8.png" alt="html 로그인" width="400" height="400">
-<img src="https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EB%A1%9C%EA%B7%B8%EC%9D%B8.png" alt="html 로그인" width="400" height="400">
-<img src="https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EB%A1%9C%EA%B7%B8%EC%9D%B8.png" alt="html 로그인" width="400" height="400">
-<img src="https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EB%A1%9C%EA%B7%B8%EC%9D%B8.png" alt="html 로그인" width="400" height="400">
+<div style="text-align: center;">
+  <img src="images/로그인.png" alt="로그인" width="400" height="400">
+  <img src="images/회원가입.png" alt="회원가입" width="400" height="400">
+</div>
+<pre>
+로그인 화면                                               회원가입 화면
+</pre>
+
+<div style="text-align: center; margin-top: 20px;">
+  <img src="images/메인 화면.png" alt="메인 화면" width="400" height="400">
+  <img src="images/OCR장면.png" alt="OCR 장면" width="400" height="400">
+</div>
+<pre>
+메인 화면                                               글자인식 장면
+</pre>
+
+
 
