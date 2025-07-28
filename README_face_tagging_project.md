@@ -87,11 +87,11 @@ Python Flask 기반의 웹 애플리케이션으로, 실시간 영상 속 인물
 
 ## 5. 실행 방법
 
-### 1. Python 환경 설정
+### 1. git clone 및 가상환경 생성 후 실행에 필요한 파일들 다운로드
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # 윈도우: venv\Scripts\activate
+git clone 
+conda create -n Trackingpj python = 3.9
 pip install -r requirements.txt
 ```
 
