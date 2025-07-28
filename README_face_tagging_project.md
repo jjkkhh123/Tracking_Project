@@ -73,7 +73,7 @@ Python Flask 기반의 웹 애플리케이션으로, 실시간 영상 속 인물
 ---
 
 ## 4. 시스템 처리 흐름
-![images]()
+![images](https://github.com/jjkkhh123/Tracking_Project/blob/main/images/%EC%8B%9C%EC%8A%A4%ED%85%9C%20%EC%95%84%ED%82%A4%ED%85%8D%EC%B2%98%20%EB%8B%A4%EC%9D%B4%EC%96%B4%EA%B7%B8%EB%9E%A8.jpg)
 1. 카메라 영상 → YOLOv8로 사람 탐지  
 2. 얼굴 영역 crop → Mediapipe로 정렬  
 3. DeepFace(Facenet)으로 얼굴 임베딩 추출  
