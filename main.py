@@ -229,7 +229,10 @@ def logout():
 @app.route('/')
 @login_required
 def index():
+    user_id = session['user_id']   # ✅ 현재 로그인한 사용자 ID
+    load_known_faces(user_id)      # ✅ 해당 사용자 태그만 로드
     return render_template('index.html')
+
 
 
 @app.route('/video_feed')
@@ -260,7 +263,8 @@ def submit_tag():
 
     if face_id in pending_faces:
         embedding = np.array(pending_faces[face_id]['embedding'])
-        save_face_to_db(tag, category, embedding, user_id=1)
+        user_id = session['user_id']   # ✅ 현재 로그인 사용자 ID
+        save_face_to_db(tag, category, embedding, user_id)
         known_faces.append({
             'tag': tag,
             'category': category,
@@ -273,7 +277,6 @@ def submit_tag():
 
 
 if __name__ == '__main__':
-    load_known_faces()
 
     # ✅ Flask 실행 직후 접속 URL을 출력 (조금 지연해서)
     def show_access_url():

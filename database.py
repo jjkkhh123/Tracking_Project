@@ -38,14 +38,16 @@ def save_face_to_db(tag, category, embedding, user_id):
     finally:
         conn.close()  # 💡 connection만 따로 close (cursor는 with문으로 처리됨)
 
-
-def load_known_faces():
-    """DB에서 임베딩 데이터를 불러와 known_faces 리스트에 로딩"""
+def load_known_faces(user_id):
+    """
+    DB에서 특정 user_id의 임베딩 데이터를 불러와 known_faces 리스트에 로딩
+    """
     global known_faces
     conn = get_db_connection()
     try:
-        with conn.cursor(dictionary=True) as cur:  # 💡 dictionary=True → 컬럼명으로 접근 가능
-            cur.execute("SELECT * FROM known_faces")
+        with conn.cursor(dictionary=True) as cur:
+            # ✅ 로그인한 사용자의 태그만 불러오기
+            cur.execute("SELECT * FROM known_faces WHERE user_id = %s", (user_id,))
             rows = cur.fetchall()
     except mysql.connector.Error as e:
         print(f"[❌] DB 조회 오류: {e}")
@@ -57,7 +59,6 @@ def load_known_faces():
 
     for row in rows:
         try:
-            # 💡 fromstring 사용 시 구분자 명시 & float64 보장 (split보다 안전하고 빠름)
             embedding_array = np.fromstring(row['embedding'], sep=',', dtype=np.float64)
 
             known_faces.append({
@@ -68,4 +69,4 @@ def load_known_faces():
         except Exception as e:
             print(f"[!] 임베딩 변환 실패 (tag: {row.get('tag')}): {e}")
 
-    print(f"[DB] ✅ {len(known_faces)}개의 태그를 불러왔습니다.")
+    print(f"[DB] ✅ {len(known_faces)}개의 태그를 불러왔습니다. (user_id={user_id})")
