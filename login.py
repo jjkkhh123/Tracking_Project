@@ -1,10 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session
 import mysql.connector
+from werkzeug.security import generate_password_hash, check_password_hash  #여기 추가
 
 login_bp = Blueprint('login_bp', __name__)
 
 def get_db_connection():
-    return mysql.connector.connect( #heidsql의 user이름과 비밀번호 그리고 가져올 데이터베이스 입력
+    return mysql.connector.connect(
         host='localhost',
         user='haihai',
         password='0122',
@@ -19,12 +20,14 @@ def login():
 
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
-        #SQL 질의어
-        cur.execute("SELECT * FROM users WHERE username = %s AND password = %s", (userid, password))
+
+        # username만으로 조회 (비밀번호는 해시 검증으로 처리)
+        cur.execute("SELECT * FROM users WHERE username = %s", (userid,))
         user = cur.fetchone()
         conn.close()
 
-        if user:
+        # 해시 검증
+        if user and check_password_hash(user['password'], password):
             session['user_id'] = user['id']
             session['username'] = user['username']
             return redirect(url_for('index'))
@@ -33,11 +36,13 @@ def login():
 
     return render_template('login.html')
 
+
 @login_bp.route('/logout')
 def logout():
     session.pop('user_id', None)
     session.pop('username', None)
     return redirect(url_for('login_bp.login'))
+
 
 @login_bp.route('/register', methods=['GET', 'POST'])
 def register():
@@ -55,7 +60,9 @@ def register():
             if cur.fetchone():
                 return render_template('login.html', register_error="이미 존재하는 아이디입니다.", open_modal=True)
             
-            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+            # 해시된 비밀번호 저장
+            hashed_pw = generate_password_hash(password)
+            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
         conn.commit()
         conn.close()
 
