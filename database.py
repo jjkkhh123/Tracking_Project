@@ -46,7 +46,6 @@ def load_known_faces(user_id):
     conn = get_db_connection()
     try:
         with conn.cursor(dictionary=True) as cur:
-            # ✅ 로그인한 사용자의 태그만 불러오기
             cur.execute("SELECT * FROM known_faces WHERE user_id = %s", (user_id,))
             rows = cur.fetchall()
     except mysql.connector.Error as e:

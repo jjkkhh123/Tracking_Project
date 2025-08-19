@@ -254,7 +254,7 @@ def logout():
 @login_required
 def index():
     global pending_faces
-    pending_faces.clear()   # ✅ 로그인 후 진입 시 초기화
+    pending_faces.clear()   
     user_id = session['user_id']
     load_known_faces(user_id)
     return render_template('index.html')
