@@ -108,21 +108,41 @@ def generate_frames():
     global last_frame
     cap = cv2.VideoCapture(0)
 
+    fps_limit = 10        # ✅ 최대 FPS 제한 (초당 10프레임)
+    prev_time = 0
+
+    yolo_interval = 0.3   # ✅ YOLO 실행 주기 (0.3초마다 한 번)
+    last_yolo_time = 0
+    last_boxes = []       # ✅ 마지막 YOLO 결과 저장
+
     while True:
         success, frame = cap.read()
         if not success:
             break
 
-        last_frame = frame.copy()
         current_time = time.time()
-        results = model(frame, classes=[48])  # ✅ best.pt는 48이 사람 class
-        boxes = results[0].boxes
 
-        for box in boxes:
+        # 1️⃣ FPS 제한 (10fps 이상으로는 처리 안 함)
+        if current_time - prev_time < 1.0 / fps_limit:
+            continue
+        prev_time = current_time
+
+        # 마지막 프레임 보관 (OCR에서 사용)
+        last_frame = frame.copy()
+
+        # 2️⃣ YOLO 실행 주기 제한
+        if current_time - last_yolo_time > yolo_interval:
+            results = model(frame, classes=[48])  # 사람 탐지
+            last_boxes = results[0].boxes
+            last_yolo_time = current_time
+
+        # 3️⃣ YOLO 결과 적용 (직전 결과도 재사용)
+        for box in last_boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
             person_crop = frame[y1:y2, x1:x2]
 
+            # 얼굴 영역 추출
             cx1, cy1 = int(w * 0.2), int(h * 0.1)
             cx2, cy2 = int(w * 0.8), int(h * 0.6)
             face_region = person_crop[cy1:cy2, cx1:cx2]
@@ -135,6 +155,8 @@ def generate_frames():
                 continue
 
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
+
+            # ✅ 기존 로직 유지 (active_tags / DB 검색 / pending_faces 등록)
 
             # 1. 캐시 확인
             if temp_id in active_tags:
@@ -175,10 +197,12 @@ def generate_frames():
                     'image': face_b64
                 }
 
+        # 최종 프레임 인코딩
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
 
 
 @app.route('/ocr_capture', methods=['POST'])
@@ -229,9 +253,12 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    user_id = session['user_id']   # ✅ 현재 로그인한 사용자 ID
-    load_known_faces(user_id)      # ✅ 해당 사용자 태그만 로드
+    global pending_faces
+    pending_faces.clear()   # ✅ 로그인 후 진입 시 초기화
+    user_id = session['user_id']
+    load_known_faces(user_id)
     return render_template('index.html')
+
 
 
 

@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ocrBtn = document.getElementById("ocrBtn");
     if (ocrBtn) {
         ocrBtn.addEventListener("click", async () => {
+            alert("실행중...");  // 👈 OCR 시작 알림
             const res = await fetch('/ocr_capture', { method: 'POST' });
             const data = await res.json();
             if (!data.success) {

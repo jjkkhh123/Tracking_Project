@@ -22,7 +22,9 @@ h1 {
 .ocr-btn {
     background-color: #27ae60;
     color: white;
+    cursor: pointer;   /* 👈 손가락 모양 포인터 */
 }
+
 form {
     background: white;
     padding: 15px;
