@@ -14,7 +14,8 @@ from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
 from login import login_bp
 from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
-
+import pyttsx3
+import queue
 # ✅ mediapipe 객체는 메모리 효율 및 동시성 문제를 줄이기 위해 매번 생성하도록 구조 변경 (→ 아래 함수 내부로 이동)
 
 app = Flask(__name__)
@@ -30,6 +31,8 @@ SIMILARITY_THRESHOLD = 0.7
 REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
 
+tts_lock = threading.Lock()
+tts_queue = queue.Queue()
 
 def align_face_with_mediapipe(image):
     h, w = image.shape[:2]
@@ -173,10 +176,24 @@ def generate_frames():
             # 2. DB 검색
             tag, category = find_matching_tag(embedding)
             if tag:
-                active_tags[temp_id] = (tag, current_time)
+                # 최초 등장일 때만
+                if temp_id not in active_tags:
+                    active_tags[temp_id] = (tag, current_time)
+
+                    # ✅ 여기서 전역에 저장된 role 확인 후 TTS 실행
+                    user_role = app.config.get('CURRENT_ROLE', 'user')
+                    if user_role == '장애인':
+                        tts_queue.put(f"{category} {tag} 님이 인식되었습니다")
+
+                else:
+                    active_tags[temp_id] = (tag, current_time)
+
+                # 화면 표시 부분은 그대로 유지
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
+
+
 
             # 3. 중복 대기 확인
             already_pending = any(
@@ -218,31 +235,42 @@ def ocr_capture():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
-
+# ✅ pyttsx3 초기화
+tts_engine = pyttsx3.init()
 @app.route('/speak_text', methods=['POST'])
 @login_required
 def speak_text():
-    from gtts import gTTS
-    import pygame
-    import io
-
     data = request.get_json()
     text = data.get('text', '')
 
     try:
-        tts = gTTS(text=text, lang='ko')
-        fp = io.BytesIO()
-        tts.write_to_fp(fp)
-        fp.seek(0)
-
-        pygame.mixer.init()
-        pygame.mixer.music.load(fp)
-        pygame.mixer.music.play()
-
+        # 비동기 실행 → 스트리밍 끊김 방지
+        threading.Thread(target=speak_async, args=(text,), daemon=True).start()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+
+def speak_async(text):
+    try:
+        with tts_lock:
+            print("[DEBUG] TTS 실행:", text)
+            tts_engine.say(text)
+            tts_engine.runAndWait()
+    except Exception as e:
+        print("[TTS 오류]", e)
+
+# ✅ 큐를 소비하는 워커 스레드
+def tts_worker():
+    while True:
+        text = tts_queue.get()
+        if text is None:  # 종료 신호
+            break
+        speak_async(text)
+        tts_queue.task_done()
+
+# 앱 시작 시 워커 실행
+threading.Thread(target=tts_worker, daemon=True).start()
 
 @app.route('/logout')
 def logout():
@@ -257,7 +285,9 @@ def index():
     pending_faces.clear()   
     user_id = session['user_id']
     load_known_faces(user_id)
-    return render_template('index.html')
+
+    role = session.get('role', 'user')  # 기본값 user
+    return render_template('index.html', role=role)
 
 
 
