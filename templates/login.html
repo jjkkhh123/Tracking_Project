@@ -2,122 +2,452 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>로그인</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-
     <style>
-        .login-container {
-            max-width: 360px;
-            margin: 80px auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .login-container h2 {
-            margin-bottom: 20px;
-            color: #2c3e50;
-        }
-        .login-container input {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        .login-container button {
-            width: 100%;
-            padding: 10px;
-            background-color: #3498db;
-            border: none;
-            color: white;
-            font-weight: bold;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .login-container button:hover {
-            background-color: #2980b9;
-        }
-        .error {
-            color: red;
-            font-size: 0.9em;
-            margin-bottom: 10px;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        /* 모달 스타일 */
-        .modal {
-            display: none; 
-            position: fixed; 
-            z-index: 1000; 
-            left: 0;
-            top: 0;
-            width: 100%; 
-            height: 100%; 
-            overflow: auto; 
-            background-color: rgba(0, 0, 0, 0.5);
-        }
-
-        .modal-content {
-            background-color: #fff;
-            margin: 10% auto;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #d2b48c 0%, #deb887 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 20px;
-            border-radius: 10px;
-            width: 300px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .main-container {
+            display: flex;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 1000px;
+            width: 100%;
+            min-height: 600px;
+        }
+
+        .left-section {
+            flex: 1;
+            background: linear-gradient(135deg, #f5f5dc 0%, #f0e68c 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            padding: 40px;
+            position: relative;
+        }
+
+        .left-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(139,69,19,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .gif-placeholder {
+            width: 400px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            border: 2px dashed #cd853f;
+            color: #8b4513;
+            font-size: 14px;
             text-align: center;
         }
 
-        .modal .close {
-            color: #aaa;
-            float: right;
+        .gif-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 13px;
+        }
+
+        .left-content h2 {
+            color: #4a5568;
             font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            z-index: 1;
+            text-align: center;
+        }
+
+        .left-content p {
+            color: #718096;
+            font-size: 16px;
+            text-align: center;
+            line-height: 1.5;
+            z-index: 1;
+        }
+
+        .right-section {
+            flex: 1;
+            padding: 60px 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: #cd853f;
+            border-radius: 8px;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
             font-weight: bold;
-            margin-top: -10px;
-            margin-right: -10px;
+        }
+
+        .brand-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .login-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+
+        .login-subtitle {
+            color: #718096;
+            margin-bottom: 40px;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #4a5568;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #cd853f;
+            box-shadow: 0 0 0 3px rgba(205, 133, 63, 0.1);
+        }
+
+        .login-button {
+            width: 100%;
+            background: #cd853f;
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 24px;
+        }
+
+        .login-button:hover {
+            background: #b8860b;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 25px rgba(205, 133, 63, 0.3);
+        }
+
+        .signup-link {
+            text-align: center;
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .signup-link a {
+            color: #cd853f;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .signup-link a:hover {
+            text-decoration: underline;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid #c53030;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal .close {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            color: #999;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s ease;
         }
 
         .modal .close:hover {
-            color: #000;
+            background: #f7fafc;
+            color: #333;
         }
+
+        .modal-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+
+        .modal-subtitle {
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .register-button {
+            width: 100%;
+            background: #cd853f;
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .register-button:hover {
+            background: #b8860b;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 25px rgba(205, 133, 63, 0.3);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+                margin: 20px;
+            }
+
+            .left-section {
+                padding: 30px 20px;
+                min-height: 200px;
+            }
+
+            .gif-placeholder {
+                width: 200px;
+                height: 120px;
+            }
+
+            .right-section {
+                padding: 40px 30px;
+            }
+
+            .modal-content {
+                margin: 10% auto;
+                padding: 30px 25px;
+            }
+        } 
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2>로그인</h2>
-        {% if error %}
-            <div class="error">{{ error }}</div>
-        {% endif %}
-        <form method="POST">
-            <input type="text" name="userid" placeholder="아이디" required>
-            <input type="password" name="password" placeholder="비밀번호" required>
-            <button type="submit">로그인</button>
-        </form>
-        <p>계정이 없으신가요? <a href="#" onclick="openRegisterModal()">회원가입</a></p>
+    <div class="main-container">
+        <!-- Left Section with GIF -->
+        <div class="left-section">
+            <div class="gif-placeholder">
+                <!-- GIF 이미지를 여기에 넣으세요 -->
+                <!-- <img src="your-animation.gif" alt="Animation" class="gif-image"> -->
+                <img src="{{ url_for('static', filename='images/test.gif') }}" alt="Animation" class="gif-image">
+            </div>
+        </div>
+
+        <!-- Right Section with Login Form -->
+        <div class="right-section">
+            <div class="brand">
+                <div class="brand-icon">M</div>
+                <div class="brand-name">MemoGlasses</div>
+            </div>
+
+            <h1 class="login-title">Sign in</h1>
+            <p class="login-subtitle">계정에 로그인하여 시작하세요</p>
+
+            <!-- Flask 템플릿에서 사용: {% if error %} -->
+            <!-- <div class="error">{{ error }}</div> -->
+            <!-- {% endif %} -->
+
+            <form method="POST">
+                <div class="form-group">
+                    <label class="form-label">아이디</label>
+                    <input type="text" name="userid" class="form-input" placeholder="아이디를 입력하세요" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">비밀번호</label>
+                    <input type="password" name="password" class="form-input" placeholder="비밀번호를 입력하세요" required>
+                </div>
+
+                <button type="submit" class="login-button">로그인</button>
+            </form>
+
+            <div class="signup-link">
+                계정이 없으신가요? <a href="#" onclick="openRegisterModal()">회원가입</a>
+            </div>
+        </div>
     </div>
 
-    <!-- 모달은 로그인 폼 밖에 둬야 함 -->
+    <!-- Registration Modal -->
     <div id="registerModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeRegisterModal()">&times;</span>
-            <h2>회원가입</h2>
-            {% if register_error %}
-                <div class="error">{{ register_error }}</div>
-            {% endif %}
+            <h2 class="modal-title">Sign up</h2>
+            <p class="modal-subtitle">새 계정을 만들어 시작하세요</p>
+            
+            <!-- Flask 템플릿에서 사용: {% if register_error %} -->
+            <!-- <div class="error">{{ register_error }}</div> -->
+            <!-- {% endif %} -->
+            
             <form method="POST" action="/register" id="registerForm">
-                <input type="text" name="username" placeholder="아이디" required><br><br>
-                <input type="password" name="password" placeholder="비밀번호" required><br><br>
-                <input type="password" name="confirm_password" placeholder="비밀번호 확인" required><br><br>
-                <button type="submit">가입하기</button>
+                <div class="form-group">
+                    <label class="form-label">아이디</label>
+                    <input type="text" name="username" class="form-input" placeholder="아이디를 입력하세요" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">비밀번호</label>
+                    <input type="password" name="password" class="form-input" placeholder="비밀번호를 입력하세요" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">비밀번호 확인</label>
+                    <input type="password" name="confirm_password" class="form-input" placeholder="비밀번호를 다시 입력하세요" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">사용자 유형</label>
+                    <select name="user_type" class="form-input" required>
+                        <option value="" disabled selected>사용자 유형 선택</option>
+                        <option value="user">일반 사용자</option>
+                        <option value="장애인">장애인 사용자</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="register-button">가입하기</button>
             </form>
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='register_modal.js') }}"></script>
-    {% if open_modal %}
+
     <script>
-        openRegisterModal();
+        function openRegisterModal() {
+            document.getElementById('registerModal').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeRegisterModal() {
+            document.getElementById('registerModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        // Click outside modal to close
+        window.onclick = function(event) {
+            const modal = document.getElementById('registerModal');
+            if (event.target === modal) {
+                closeRegisterModal();
+            }
+        }
+
+        // Escape key to close modal
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeRegisterModal();
+            }
+        });
+
+        // Flask 템플릿에서 사용: {% if open_modal %}
+        // openRegisterModal();
+        // {% endif %}
     </script>
-    {% endif %}
 </body>
 </html>

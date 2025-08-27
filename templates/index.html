@@ -3,24 +3,307 @@
 <head>
     <meta charset="UTF-8">
     <title>Face Tag Tracker</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            background: linear-gradient(135deg, #d2b48c 0%, #deb887 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            color: #2c3e50;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #1a202c;
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 30px;
+        }
+
+        .video-section {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .video-feed {
+            border-radius: 15px;
+            border: 3px solid #cd853f;
+            box-shadow: 0 10px 30px rgba(205, 133, 63, 0.2);
+        }
+
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .logout-btn, .ocr-btn {
+            padding: 12px 24px;
+            font-weight: 600;
+            border-radius: 10px;
+            text-decoration: none;
+            border: none;
+            margin: 0 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .logout-btn {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .logout-btn:hover {
+            background-color: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .ocr-btn {
+            background-color: #cd853f;
+            color: white;
+        }
+
+        .ocr-btn:hover {
+            background-color: #b8860b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(205, 133, 63, 0.3);
+        }
+
+        .pending-section {
+            margin-top: 30px;
+        }
+
+        .pending-title {
+            text-align: center;
+            color: #1a202c;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .pending-table-container {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 2px solid #e2e8f0;
+        }
+
+        .pending-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .pending-table th {
+            background: linear-gradient(135deg, #cd853f 0%, #daa520 100%);
+            color: white;
+            padding: 15px 12px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+        }
+
+        .pending-table th:first-child {
+            width: 100px;
+        }
+
+        .pending-table th:nth-child(2) {
+            width: 120px;
+        }
+
+        .pending-table th:nth-child(3) {
+            width: 200px;
+        }
+
+        .pending-table th:nth-child(4) {
+            width: 150px;
+        }
+
+        .pending-table td {
+            padding: 12px;
+            text-align: center;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: middle;
+        }
+
+        .pending-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .pending-table tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .face-image {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 2px solid #e2e8f0;
+        }
+
+        .face-id {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .name-input {
+            padding: 8px 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+            max-width: 180px;
+            transition: border-color 0.3s ease;
+        }
+
+        .name-input:focus {
+            outline: none;
+            border-color: #cd853f;
+            box-shadow: 0 0 0 3px rgba(205, 133, 63, 0.1);
+        }
+
+        .category-select {
+            padding: 8px 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+            max-width: 130px;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        .category-select:focus {
+            outline: none;
+            border-color: #cd853f;
+            box-shadow: 0 0 0 3px rgba(205, 133, 63, 0.1);
+        }
+
+        /* 스크롤바 스타일링 */
+        .pending-table-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .pending-table-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .pending-table-container::-webkit-scrollbar-thumb {
+            background: #cd853f;
+            border-radius: 4px;
+        }
+
+        .pending-table-container::-webkit-scrollbar-thumb:hover {
+            background: #b8860b;
+        }
+
+        /* 데이터가 없을 때 표시 */
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+            font-size: 16px;
+        }
+
+        /* 반응형 디자인 */
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                padding: 20px;
+            }
+
+            .video-feed {
+                max-width: 100%;
+                height: auto;
+            }
+
+            .pending-table-container {
+                max-height: 300px;
+            }
+
+            .pending-table th,
+            .pending-table td {
+                padding: 8px 6px;
+                font-size: 12px;
+            }
+
+            .face-image {
+                width: 50px;
+                height: 50px;
+            }
+
+            .name-input,
+            .category-select {
+                max-width: 120px;
+                font-size: 12px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>실시간 얼굴 태깅 시스템</h1>
-    {% if role == "장애인" %}
-    <script>
-      alert("장애인 전용 모드로 접속하셨습니다.");
-    </script>
-    {% endif %}
-    <div style="text-align:center;">
-        <img src="/video_feed" width="640" style="border-radius: 10px; border: 2px solid #6c7ae0;" />
+    <div class="container">
+        <h1>실시간 얼굴 태깅 시스템</h1>
+        
+        <!-- Flask 템플릿에서 사용: {% if role == "장애인" %} -->
+        <!-- <script>
+          alert("장애인 전용 모드로 접속하셨습니다.");
+        </script> -->
+        <!-- {% endif %} -->
+        
+        <div class="video-section">
+            <img src="/video_feed" width="640" style="border-radius: 10px; border: 2px solid #6c7ae0;" />
+        </div>
+        
+        <div class="controls">
+            <a href="/logout" class="logout-btn">로그아웃</a>
+            <button id="ocrBtn" class="ocr-btn">글자 추출</button>
+        </div>
+
+        <div class="pending-section">
+            <h2 style="text-align:center;">태그 대기중인 얼굴들</h2>
+            <div class="pending-table-container">
+                <table class="pending-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">Face</th>
+                            <th style="width: 20%;">Face ID</th>
+                            <th style="width: 20%;">Name</th>
+                            <th style="width: 20%;">Category</th>
+                            <th style="width: 20%;">Submit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pending" class="pending-container">
+                        <!-- Face와 Face ID는 main.js에서 자동으로 추가됨 -->
+                    </tbody>
+                </table>
+                
+                <!-- 데이터가 없을 때 표시할 메시지 -->
+                <div class="no-data" id="noDataMessage">
+                    태그 대기중인 얼굴이 없습니다.
+                </div>
+            </div>
+        </div>
     </div>
-    <div style="text-align: center; margin-top: 10px;">
-        <a href="/logout" class="logout-btn">로그아웃</a>
-        <button id="ocrBtn" class="ocr-btn">글자 추출</button>
-    </div>
-    <h2 style="text-align:center;">태그 대기중인 얼굴들</h2>
-    <div id="pending" class="pending-container"></div>
+
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

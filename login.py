@@ -52,6 +52,7 @@ def register():
         username = request.form['username']
         password = request.form['password']
         confirm = request.form['confirm_password']
+        user_type = request.form.get('user_type')  # 🔹 사용자 유형 받기 ('user' 또는 '장애인')
 
         if password != confirm:
             return render_template('login.html', register_error="비밀번호가 일치하지 않습니다.", open_modal=True)
@@ -63,7 +64,13 @@ def register():
                 return render_template('login.html', register_error="이미 존재하는 아이디입니다.", open_modal=True)
             
             hashed_pw = generate_password_hash(password)
-            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+            
+            # cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+            # 🔹 사용자 유형에 따라 role 저장
+            cur.execute(
+                "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
+                (username, hashed_pw, user_type)
+            )
         conn.commit()
         conn.close()
 
