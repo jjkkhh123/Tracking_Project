@@ -37,13 +37,7 @@ def login():
     return render_template('login.html')
 
 
-@login_bp.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    session.pop('username', None)
-    session.pop('role', None)
-    current_app.config['CURRENT_ROLE'] = 'user'  # ✅ 기본값으로 리셋
-    return redirect(url_for('login_bp.login'))
+
 
 
 @login_bp.route('/register', methods=['GET', 'POST'])

@@ -235,20 +235,27 @@ def ocr_capture():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+# ✅ pyttsx3 초기화 (Windows면 sapi5 권장)
+tts_engine = pyttsx3.init(driverName='sapi5')  # <-- 이 줄을 반드시 추가
+
 # ✅ pyttsx3 초기화
-tts_engine = pyttsx3.init()
+# (교체) /speak_text 라우트
 @app.route('/speak_text', methods=['POST'])
 @login_required
 def speak_text():
     data = request.get_json()
-    text = data.get('text', '')
+    print("[DEBUG] speak_text 요청 데이터:", data)
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({'success': False, 'message': '읽을 텍스트가 비어있습니다.'})
 
     try:
-        # 비동기 실행 → 스트리밍 끊김 방지
-        threading.Thread(target=speak_async, args=(text,), daemon=True).start()
+        print("[DEBUG] OCR TTS 큐 등록:", text)
+        tts_queue.put(text)  # ✅ 얼굴 인식과 동일 파이프라인 사용
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
 
 
 def speak_async(text):
@@ -274,20 +281,26 @@ threading.Thread(target=tts_worker, daemon=True).start()
 
 @app.route('/logout')
 def logout():
+    global active_tags, pending_faces
     session.pop('user_id', None)
-    return redirect(url_for('login_bp.login'))  # ✅ blueprint명 반영
+    active_tags.clear()      # ✅ 로그아웃 시 초기화
+    pending_faces.clear()
+    return redirect(url_for('login_bp.login'))
+
 
 
 @app.route('/')
 @login_required
 def index():
-    global pending_faces
-    pending_faces.clear()   
+    global pending_faces, active_tags
+    pending_faces.clear()
+    active_tags.clear()      # ✅ 로그인 직후 초기화
     user_id = session['user_id']
     load_known_faces(user_id)
 
     role = session.get('role', 'user')  # 기본값 user
     return render_template('index.html', role=role)
+
 
 
 
