@@ -3,37 +3,42 @@ import numpy as np
 import base64
 import time
 import mediapipe as mp
-import sys
 import threading
 import socket
 from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
-from functools import wraps
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
 from login import login_bp
-from database import get_db_connection, load_known_faces, save_face_to_db, known_faces
+from database import load_known_faces, save_face_to_db, known_faces
 import pyttsx3
 import queue
-# ✅ mediapipe 객체는 메모리 효율 및 동시성 문제를 줄이기 위해 매번 생성하도록 구조 변경 (→ 아래 함수 내부로 이동)
 
+# -------------------------------
+# Flask 초기화
+# -------------------------------
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
-model = YOLO("best.pt")  # 기존 yolov8n.pt → best.pt
+model = YOLO("best.pt")
 app.register_blueprint(login_bp)
 
+# -------------------------------
+# 전역 상태
+# -------------------------------
 pending_faces = {}
 active_tags = {}
 last_frame = None
 
 SIMILARITY_THRESHOLD = 0.7
-REQUIRED_SECONDS = 3
 TAG_CACHE_SECONDS = 5
 
 tts_lock = threading.Lock()
 tts_queue = queue.Queue()
 
+# -------------------------------
+# 유틸 함수
+# -------------------------------
 def align_face_with_mediapipe(image):
     h, w = image.shape[:2]
     try:
@@ -44,41 +49,23 @@ def align_face_with_mediapipe(image):
         return image
 
     if not results.multi_face_landmarks:
-        print("[!] 얼굴 미검출: mediapipe 결과 없음")
         return image
 
     try:
         landmarks = results.multi_face_landmarks[0].landmark
-
-        # 눈 중심 계산
         left_eye = np.mean([(landmarks[33].x, landmarks[33].y), (landmarks[133].x, landmarks[133].y)], axis=0)
         right_eye = np.mean([(landmarks[362].x, landmarks[362].y), (landmarks[263].x, landmarks[263].y)], axis=0)
-
-        # 이미지 좌표로 변환
         left_eye = np.array([left_eye[0] * w, left_eye[1] * h])
         right_eye = np.array([right_eye[0] * w, right_eye[1] * h])
-
         delta = right_eye - left_eye
         angle = np.degrees(np.arctan2(delta[1], delta[0]))
         center = tuple(int(x) for x in np.mean([left_eye, right_eye], axis=0))
-
         M = cv2.getRotationMatrix2D(center, angle, 1.0)
         aligned = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR)
-
         return aligned
     except Exception as e:
         print("[❌] align_face_with_mediapipe 예외 발생:", e)
         return image
-
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login_bp.login'))  # ✅ 정확한 blueprint 명시
-        return f(*args, **kwargs)
-    return decorated_function
-
 
 def get_face_embedding(face_img):
     try:
@@ -89,14 +76,12 @@ def get_face_embedding(face_img):
         print("[!] get_face_embedding 실패:", e)
         return None
 
-
 def find_matching_tag(embedding):
     for face in known_faces:
         similarity = 1 - cosine(embedding, face['embedding'])
         if similarity > SIMILARITY_THRESHOLD:
             return face['tag'], face.get('category', '기타')
     return None, None
-
 
 def draw_korean_text(frame, text, x, y, font_size=30):
     img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -106,17 +91,17 @@ def draw_korean_text(frame, text, x, y, font_size=30):
     draw.text((x, y), text, font=font, fill=(255, 255, 0))
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
-
+# -------------------------------
+# 프레임 생성 루프
+# -------------------------------
 def generate_frames():
     global last_frame
     cap = cv2.VideoCapture(0)
-
-    fps_limit = 10        # ✅ 최대 FPS 제한 (초당 10프레임)
+    fps_limit = 10
     prev_time = 0
-
-    yolo_interval = 0.3   # ✅ YOLO 실행 주기 (0.3초마다 한 번)
+    yolo_interval = 0.3
     last_yolo_time = 0
-    last_boxes = []       # ✅ 마지막 YOLO 결과 저장
+    last_boxes = []
 
     while True:
         success, frame = cap.read()
@@ -124,28 +109,21 @@ def generate_frames():
             break
 
         current_time = time.time()
-
-        # 1️⃣ FPS 제한 (10fps 이상으로는 처리 안 함)
         if current_time - prev_time < 1.0 / fps_limit:
             continue
         prev_time = current_time
 
-        # 마지막 프레임 보관 (OCR에서 사용)
         last_frame = frame.copy()
 
-        # 2️⃣ YOLO 실행 주기 제한
         if current_time - last_yolo_time > yolo_interval:
-            results = model(frame, classes=[48])  # 사람 탐지
+            results = model(frame, classes=[48])
             last_boxes = results[0].boxes
             last_yolo_time = current_time
 
-        # 3️⃣ YOLO 결과 적용 (직전 결과도 재사용)
         for box in last_boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
             person_crop = frame[y1:y2, x1:x2]
-
-            # 얼굴 영역 추출
             cx1, cy1 = int(w * 0.2), int(h * 0.1)
             cx2, cy2 = int(w * 0.8), int(h * 0.6)
             face_region = person_crop[cy1:cy2, cx1:cx2]
@@ -159,9 +137,7 @@ def generate_frames():
 
             temp_id = str(hash(tuple(np.round(embedding[:4], 2))))[:6]
 
-            # ✅ 기존 로직 유지 (active_tags / DB 검색 / pending_faces 등록)
-
-            # 1. 캐시 확인
+            # 캐시 확인
             if temp_id in active_tags:
                 tag, last_seen = active_tags[temp_id]
                 if current_time - last_seen < TAG_CACHE_SECONDS:
@@ -173,29 +149,23 @@ def generate_frames():
                 else:
                     del active_tags[temp_id]
 
-            # 2. DB 검색
+            # DB 검색
             tag, category = find_matching_tag(embedding)
             if tag:
-                # 최초 등장일 때만
                 if temp_id not in active_tags:
                     active_tags[temp_id] = (tag, current_time)
-
-                    # ✅ 여기서 전역에 저장된 role 확인 후 TTS 실행
                     user_role = app.config.get('CURRENT_ROLE', 'user')
+                    print(f"[DEBUG] 최초 인식: {tag}, role={user_role}")
                     if user_role == '장애인':
                         tts_queue.put(f"{category} {tag} 님이 인식되었습니다")
-
                 else:
                     active_tags[temp_id] = (tag, current_time)
 
-                # 화면 표시 부분은 그대로 유지
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 frame = draw_korean_text(frame, f"{category}:{tag}", x1, y1 - 30)
                 continue
 
-
-
-            # 3. 중복 대기 확인
+            # 신규 대기 등록
             already_pending = any(
                 1 - cosine(embedding, pf['embedding']) > SIMILARITY_THRESHOLD
                 for pf in pending_faces.values()
@@ -203,7 +173,6 @@ def generate_frames():
             if already_pending:
                 continue
 
-            # 4. 신규 대기 등록
             if temp_id not in pending_faces:
                 face_img = face_region.copy()
                 success, face_jpg = cv2.imencode('.jpg', face_img)
@@ -214,16 +183,15 @@ def generate_frames():
                     'image': face_b64
                 }
 
-        # 최종 프레임 인코딩
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-
-
+# -------------------------------
+# OCR
+# -------------------------------
 @app.route('/ocr_capture', methods=['POST'])
-@login_required
 def ocr_capture():
     from OCR_Paddle_module import extract_text_from_image
     global last_frame
@@ -235,84 +203,98 @@ def ocr_capture():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
-# ✅ pyttsx3 초기화 (Windows면 sapi5 권장)
-tts_engine = pyttsx3.init(driverName='sapi5')  # <-- 이 줄을 반드시 추가
-
-# ✅ pyttsx3 초기화
-# (교체) /speak_text 라우트
+# -------------------------------
+# TTS (SAPI5: 워커 스레드 전용 엔진)
+# -------------------------------
 @app.route('/speak_text', methods=['POST'])
-@login_required
 def speak_text():
     data = request.get_json()
-    print("[DEBUG] speak_text 요청 데이터:", data)
     text = (data.get('text') or '').strip()
     if not text:
         return jsonify({'success': False, 'message': '읽을 텍스트가 비어있습니다.'})
 
     try:
         print("[DEBUG] OCR TTS 큐 등록:", text)
-        tts_queue.put(text)  # ✅ 얼굴 인식과 동일 파이프라인 사용
+        tts_queue.put(text)
+        print("[DEBUG] 큐 크기:", tts_queue.qsize())
         return jsonify({'success': True})
     except Exception as e:
+        print("[TTS 오류 - speak_text]", e)
         return jsonify({'success': False, 'message': str(e)})
 
 
-
-def speak_async(text):
-    try:
-        with tts_lock:
-            print("[DEBUG] TTS 실행:", text)
-            tts_engine.say(text)
-            tts_engine.runAndWait()
-    except Exception as e:
-        print("[TTS 오류]", e)
-
-# ✅ 큐를 소비하는 워커 스레드
 def tts_worker():
+    print("[DEBUG] tts_worker 스레드 진입")
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+        print("[DEBUG] pythoncom.CoInitialize 성공")
+    except Exception as e:
+        print("[DEBUG] pythoncom.CoInitialize 실패:", e)
+
+    try:
+        engine = pyttsx3.init(driverName='sapi5')
+        print("[DEBUG] tts_worker 스레드 시작됨 (SAPI5 엔진 생성 완료)")
+    except Exception as e:
+        print("[TTS 워커 오류] 엔진 생성 실패:", e)
+        return
+
     while True:
-        text = tts_queue.get()
-        if text is None:  # 종료 신호
-            break
-        speak_async(text)
-        tts_queue.task_done()
+        try:
+            text = tts_queue.get()
+            print("[DEBUG] tts_worker 큐에서 꺼냄:", type(text),
+                  (text[:80] + "...") if isinstance(text, str) else text)
 
-# 앱 시작 시 워커 실행
-threading.Thread(target=tts_worker, daemon=True).start()
+            if text is None:
+                break
 
+            if isinstance(text, str) and len(text) > 600:
+                text = text[:600] + " ... 이하 생략"
+
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()] if isinstance(text, str) else []
+            for line in lines:
+                print("[DEBUG] TTS 실행:", line)
+                engine.say(line)
+
+            if lines:
+                engine.runAndWait()
+
+        except Exception as e:
+            print("[TTS 워커 오류]", e)
+
+        finally:
+            tts_queue.task_done()
+
+# -------------------------------
+# 라우트
+# -------------------------------
 @app.route('/logout')
 def logout():
     global active_tags, pending_faces
     session.pop('user_id', None)
-    active_tags.clear()      # ✅ 로그아웃 시 초기화
+    session.pop('username', None)
+    session.pop('role', None)
+    app.config['CURRENT_ROLE'] = 'user'
+    active_tags.clear()
     pending_faces.clear()
     return redirect(url_for('login_bp.login'))
 
-
-
 @app.route('/')
-@login_required
 def index():
     global pending_faces, active_tags
     pending_faces.clear()
-    active_tags.clear()      # ✅ 로그인 직후 초기화
-    user_id = session['user_id']
-    load_known_faces(user_id)
-
-    role = session.get('role', 'user')  # 기본값 user
+    active_tags.clear()
+    if 'user_id' in session:
+        user_id = session['user_id']
+        load_known_faces(user_id)
+    role = session.get('role', 'user')
     return render_template('index.html', role=role)
 
-
-
-
-
 @app.route('/video_feed')
-@login_required
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-
 @app.route('/get_pending_tags')
-@login_required
 def get_pending_tags():
     return jsonify([
         {
@@ -322,9 +304,7 @@ def get_pending_tags():
         for face_id, info in pending_faces.items()
     ])
 
-
 @app.route('/submit_tag', methods=['POST'])
-@login_required
 def submit_tag():
     data = request.get_json()
     face_id = data['face_id']
@@ -333,7 +313,7 @@ def submit_tag():
 
     if face_id in pending_faces:
         embedding = np.array(pending_faces[face_id]['embedding'])
-        user_id = session['user_id']   # ✅ 현재 로그인 사용자 ID
+        user_id = session['user_id']
         save_face_to_db(tag, category, embedding, user_id)
         known_faces.append({
             'tag': tag,
@@ -344,18 +324,19 @@ def submit_tag():
         return 'success'
     return 'fail'
 
-
-
+# -------------------------------
+# 앱 실행
+# -------------------------------
 if __name__ == '__main__':
+    worker = threading.Thread(target=tts_worker, daemon=True)
+    worker.start()
+    print("[DEBUG] tts_worker 스레드 실행 요청됨")
 
-    # ✅ Flask 실행 직후 접속 URL을 출력 (조금 지연해서)
     def show_access_url():
         print("\n🌐 접속 주소:")
         print(" - http://127.0.0.1:5000  (로컬)")
-        
         ip = socket.gethostbyname(socket.gethostname())
         print(f" - http://{ip}:5000    (외부접속)")
 
-    threading.Timer(2.0, show_access_url).start()  # 2초 후 실행
-
-    app.run(host='0.0.0.0', port=5000)
+    threading.Timer(2.0, show_access_url).start()
+    app.run(host='0.0.0.0', port=5000, use_reloader=False)
