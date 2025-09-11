@@ -6,6 +6,7 @@ import mediapipe as mp
 import threading
 import socket
 from flask import Flask, render_template, Response, request, jsonify, session, redirect, url_for
+from functools import wraps
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
 from PIL import ImageFont, ImageDraw, Image
@@ -35,6 +36,17 @@ TAG_CACHE_SECONDS = 5
 
 tts_lock = threading.Lock()
 tts_queue = queue.Queue()
+
+# -------------------------------
+# 로그인 확인 데코레이터
+# -------------------------------
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login_bp.login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # -------------------------------
 # 유틸 함수
@@ -96,7 +108,7 @@ def draw_korean_text(frame, text, x, y, font_size=30):
 # -------------------------------
 def generate_frames():
     global last_frame
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture("http://192.168.196.199:81/stream")
     fps_limit = 10
     prev_time = 0
     yolo_interval = 0.3
@@ -192,6 +204,7 @@ def generate_frames():
 # OCR
 # -------------------------------
 @app.route('/ocr_capture', methods=['POST'])
+@login_required
 def ocr_capture():
     from OCR_Paddle_module import extract_text_from_image
     global last_frame
@@ -207,6 +220,7 @@ def ocr_capture():
 # TTS (SAPI5: 워커 스레드 전용 엔진)
 # -------------------------------
 @app.route('/speak_text', methods=['POST'])
+@login_required
 def speak_text():
     data = request.get_json()
     text = (data.get('text') or '').strip()
@@ -280,21 +294,24 @@ def logout():
     return redirect(url_for('login_bp.login'))
 
 @app.route('/')
+@login_required
 def index():
     global pending_faces, active_tags
     pending_faces.clear()
     active_tags.clear()
-    if 'user_id' in session:
-        user_id = session['user_id']
-        load_known_faces(user_id)
+
+    user_id = session['user_id']
+    load_known_faces(user_id)
     role = session.get('role', 'user')
     return render_template('index.html', role=role)
 
 @app.route('/video_feed')
+@login_required
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/get_pending_tags')
+@login_required
 def get_pending_tags():
     return jsonify([
         {
@@ -305,6 +322,7 @@ def get_pending_tags():
     ])
 
 @app.route('/submit_tag', methods=['POST'])
+@login_required
 def submit_tag():
     data = request.get_json()
     face_id = data['face_id']
